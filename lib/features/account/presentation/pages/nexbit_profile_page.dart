@@ -98,9 +98,7 @@ class NexbitProfilePage extends StatelessWidget {
                         icon: Icons.logout,
                         label: S.profileLogoutAllDevices,
                         onTap: () {
-                          isLoggedIn.value = false;
-                          currentUserName.value = '';
-                          currentUserEmail.value = '';
+                          clearSession();
                           Navigator.of(context).popUntil((route) => route.isFirst);
                           _snack(context, S.profileLogoutAllSnack);
                         },
@@ -115,9 +113,7 @@ class NexbitProfilePage extends StatelessWidget {
                           title: S.profileDeactivateConfirmTitle,
                           message: S.profileDeactivateConfirmMessage,
                           onConfirm: () {
-                            isLoggedIn.value = false;
-                            currentUserName.value = '';
-                            currentUserEmail.value = '';
+                            clearSession();
                             Navigator.of(context).popUntil((route) => route.isFirst);
                             _snack(context, S.profileAccountDeactivatedSnack);
                           },
@@ -134,9 +130,7 @@ class NexbitProfilePage extends StatelessWidget {
                           message: S.profileDeleteConfirmMessage,
                           danger: true,
                           onConfirm: () {
-                            isLoggedIn.value = false;
-                            currentUserName.value = '';
-                            currentUserEmail.value = '';
+                            clearSession();
                             Navigator.of(context).popUntil((route) => route.isFirst);
                             _snack(context, S.profileAccountDeletedSnack);
                           },

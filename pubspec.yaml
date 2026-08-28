@@ -19,6 +19,9 @@ dependencies:
   # settings across page reloads (see core/prefs/app_prefs.dart). Nothing
   # else in this demo — login session, mock trading data — is persisted.
   shared_preferences: ^2.3.2
+  # Talks to the real auth backend in backend/ (register/login/me) —
+  # see lib/core/api/api_client.dart.
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

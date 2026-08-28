@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
 import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
@@ -26,6 +27,7 @@ class NexbitLoginPage extends StatefulWidget {
 class _NexbitLoginPageState extends State<NexbitLoginPage> {
   bool _obscure = true;
   bool _remember = false;
+  bool _loading = false;
   final _emailController = TextEditingController(text: 'oasdmoasdm@gmail.com');
   final _passwordController = TextEditingController(text: 'password123');
 
@@ -36,23 +38,41 @@ class _NexbitLoginPageState extends State<NexbitLoginPage> {
     super.dispose();
   }
 
-  void _submit() {
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_loading) return; // guards the Enter-key submit path too, not just the button
     if (_emailController.text.trim().isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(S.loginRequiredFields), duration: const Duration(seconds: 2)),
-      );
+      _snack(S.loginRequiredFields);
       return;
     }
-    // A real app would call the auth API here and only navigate on success.
-    // This is a demo build with no backend, so any non-empty credentials
-    // land straight on the Futures page.
-    final email = _emailController.text.trim();
-    currentUserEmail.value = email;
-    currentUserName.value = displayNameFromEmail(email);
-    isLoggedIn.value = true;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const NexbitFuturesPage()),
-    );
+    setState(() => _loading = true);
+    try {
+      // Real backend call (see backend/) — a wrong email/password now
+      // actually fails instead of silently accepting anything.
+      final result = await ApiClient.login(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      final user = result['user'] as Map<String, dynamic>;
+      currentUserEmail.value = user['email'] as String;
+      currentUserName.value = user['name'] as String;
+      authToken.value = result['access_token'] as String;
+      isLoggedIn.value = true;
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const NexbitFuturesPage()),
+      );
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -74,6 +94,7 @@ class _NexbitLoginPageState extends State<NexbitLoginPage> {
                   final form = _LoginForm(
                     obscure: _obscure,
                     remember: _remember,
+                    loading: _loading,
                     emailController: _emailController,
                     passwordController: _passwordController,
                     onToggleObscure: () => setState(() => _obscure = !_obscure),
@@ -150,6 +171,7 @@ class _NexbitLoginPageState extends State<NexbitLoginPage> {
 class _LoginForm extends StatelessWidget {
   final bool obscure;
   final bool remember;
+  final bool loading;
   final TextEditingController emailController;
   final TextEditingController passwordController;
   final VoidCallback onToggleObscure;
@@ -159,6 +181,7 @@ class _LoginForm extends StatelessWidget {
   const _LoginForm({
     required this.obscure,
     required this.remember,
+    required this.loading,
     required this.emailController,
     required this.passwordController,
     required this.onToggleObscure,
@@ -216,7 +239,7 @@ class _LoginForm extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          AuthPrimaryButton(label: S.loginSubmit, onTap: onSubmit),
+          AuthPrimaryButton(label: S.loginSubmit, onTap: onSubmit, loading: loading),
           const SizedBox(height: 18),
           Hoverable(
             hoverScale: 1.03,

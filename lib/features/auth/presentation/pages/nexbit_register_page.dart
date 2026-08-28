@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
 import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
@@ -24,6 +25,7 @@ class _NexbitRegisterPageState extends State<NexbitRegisterPage> {
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _agreeTerms = false;
+  bool _loading = false;
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -46,7 +48,8 @@ class _NexbitRegisterPageState extends State<NexbitRegisterPage> {
     );
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_loading) return; // guards the Enter-key submit path too, not just the button
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
@@ -72,16 +75,26 @@ class _NexbitRegisterPageState extends State<NexbitRegisterPage> {
       _snack(S.registerMustAgreeTerms);
       return;
     }
-    // Demo build with no backend: a valid, well-formed submission logs the
-    // new user straight into the Futures page, same as a real "register ->
-    // auto sign-in" flow would once the account is actually created —
-    // matches where a successful login also lands.
-    currentUserName.value = name;
-    currentUserEmail.value = email;
-    isLoggedIn.value = true;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const NexbitFuturesPage()),
-    );
+
+    setState(() => _loading = true);
+    try {
+      // Real backend call (see backend/) — a duplicate email now actually
+      // gets rejected instead of silently "succeeding".
+      final result = await ApiClient.register(name: name, email: email, password: password);
+      final user = result['user'] as Map<String, dynamic>;
+      currentUserName.value = user['name'] as String;
+      currentUserEmail.value = user['email'] as String;
+      authToken.value = result['access_token'] as String;
+      isLoggedIn.value = true;
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const NexbitFuturesPage()),
+      );
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -101,6 +114,7 @@ class _NexbitRegisterPageState extends State<NexbitRegisterPage> {
                     obscure: _obscure,
                     obscureConfirm: _obscureConfirm,
                     agreeTerms: _agreeTerms,
+                    loading: _loading,
                     nameController: _nameController,
                     emailController: _emailController,
                     passwordController: _passwordController,
@@ -182,6 +196,7 @@ class _RegisterForm extends StatelessWidget {
   final bool obscure;
   final bool obscureConfirm;
   final bool agreeTerms;
+  final bool loading;
   final TextEditingController nameController;
   final TextEditingController emailController;
   final TextEditingController passwordController;
@@ -195,6 +210,7 @@ class _RegisterForm extends StatelessWidget {
     required this.obscure,
     required this.obscureConfirm,
     required this.agreeTerms,
+    required this.loading,
     required this.nameController,
     required this.emailController,
     required this.passwordController,
@@ -278,7 +294,7 @@ class _RegisterForm extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          AuthPrimaryButton(label: S.registerSubmit, onTap: onSubmit),
+          AuthPrimaryButton(label: S.registerSubmit, onTap: onSubmit, loading: loading),
           const SizedBox(height: 18),
           Center(
             child: Row(

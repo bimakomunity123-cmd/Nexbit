@@ -77,7 +77,11 @@ class AuthTextField extends StatelessWidget {
 class AuthPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  const AuthPrimaryButton({super.key, required this.label, required this.onTap});
+  /// Shows a spinner instead of the label and ignores taps — used while
+  /// an actual network request (register/login) is in flight, so a slow
+  /// backend can't be double-submitted.
+  final bool loading;
+  const AuthPrimaryButton({super.key, required this.label, required this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -99,12 +103,20 @@ class AuthPrimaryButton extends StatelessWidget {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: onTap,
+              onTap: loading ? null : onTap,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(label,
-                    textAlign: TextAlign.center,
-                    style: NexbitText.body(fontSize: 15, weight: FontWeight.w700, color: const Color(0xFF04120E))),
+                child: loading
+                    ? const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF04120E)),
+                        ),
+                      )
+                    : Text(label,
+                        textAlign: TextAlign.center,
+                        style: NexbitText.body(fontSize: 15, weight: FontWeight.w700, color: const Color(0xFF04120E))),
               ),
             ),
           ),

@@ -160,9 +160,7 @@ class _AccountMenu extends StatelessWidget {
   static const _itemWidth = 220.0;
 
   void _logout(BuildContext context) {
-    isLoggedIn.value = false;
-    currentUserName.value = '';
-    currentUserEmail.value = '';
+    clearSession();
     Navigator.of(context).popUntil((route) => route.isFirst);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(S.navLogoutSuccessSnack), duration: const Duration(seconds: 2)),

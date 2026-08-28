@@ -16,6 +16,11 @@ final ValueNotifier<bool> isLoggedIn = ValueNotifier(false);
 final ValueNotifier<String> currentUserName = ValueNotifier('');
 final ValueNotifier<String> currentUserEmail = ValueNotifier('');
 
+/// The JWT issued by the real backend (see backend/) on register/login.
+/// Kept in memory only — a reload loses it and the user is logged out,
+/// same as [isLoggedIn] itself; there's no "remember me" persistence yet.
+final ValueNotifier<String> authToken = ValueNotifier('');
+
 /// Best-effort display name from an email's local part when only an
 /// email was collected (the login form, unlike Register, has no separate
 /// name field) — "budi.santoso@gmail.com" → "Budi.santoso".
@@ -23,4 +28,13 @@ String displayNameFromEmail(String email) {
   final local = email.split('@').first;
   if (local.isEmpty) return local;
   return local[0].toUpperCase() + local.substring(1);
+}
+
+/// Clears all session state — used by every logout/deactivate/delete
+/// flow in the account pages and the navbar's account menu.
+void clearSession() {
+  isLoggedIn.value = false;
+  currentUserName.value = '';
+  currentUserEmail.value = '';
+  authToken.value = '';
 }
