@@ -1,0 +1,283 @@
+import 'package:flutter/material.dart';
+import '../../../../core/i18n/strings.dart';
+import '../../../../core/theme/nexbit_theme.dart';
+import '../../domain/models/futures_contract.dart';
+import '../../domain/models/futures_position.dart';
+
+enum _PosTab { positions, openOrders, orderHistory, tradeHistory }
+
+/// The Positions / Open Orders / Order History / Trade History tab strip
+/// under the chart — the real functional core of the page: closing a
+/// position here actually removes it (and books its PnL), same
+/// functional-realism bar as the rest of this app's mock trading flows.
+class FuturesPositionsPanel extends StatefulWidget {
+  final List<FuturesPosition> positions;
+  final double Function(String contractId) markPriceOf;
+  final ValueChanged<FuturesPosition> onClose;
+
+  const FuturesPositionsPanel({
+    super.key,
+    required this.positions,
+    required this.markPriceOf,
+    required this.onClose,
+  });
+
+  @override
+  State<FuturesPositionsPanel> createState() => _FuturesPositionsPanelState();
+}
+
+class _FuturesPositionsPanelState extends State<FuturesPositionsPanel> {
+  _PosTab _tab = _PosTab.positions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: NexbitColors.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: NexbitColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Wrap(
+              spacing: 22,
+              runSpacing: 6,
+              children: [
+                _Tab(S.futuresTabPositions(widget.positions.length), active: _tab == _PosTab.positions, onTap: () => setState(() => _tab = _PosTab.positions)),
+                _Tab(S.futuresTabOpenOrders(0), active: _tab == _PosTab.openOrders, onTap: () => setState(() => _tab = _PosTab.openOrders)),
+                _Tab(S.futuresTabOrderHistory, active: _tab == _PosTab.orderHistory, onTap: () => setState(() => _tab = _PosTab.orderHistory)),
+                _Tab(S.futuresTabTradeHistory, active: _tab == _PosTab.tradeHistory, onTap: () => setState(() => _tab = _PosTab.tradeHistory)),
+              ],
+            ),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 10), child: Divider(height: 1, color: NexbitColors.line)),
+          switch (_tab) {
+            _PosTab.positions => _positionsTable(),
+            _PosTab.openOrders => _headerOnlyTable(
+                columns: [
+                  S.futuresColTime,
+                  S.futuresColSymbol,
+                  S.futuresColType,
+                  S.futuresColSide,
+                  S.futuresColPrice,
+                  S.futuresColAmount,
+                  S.futuresColFilled,
+                  S.futuresColTriggerConditions,
+                  S.futuresColTif,
+                  '',
+                ],
+                emptyLabel: S.futuresNoOpenOrders,
+              ),
+            _PosTab.orderHistory => _headerOnlyTable(
+                columns: [
+                  S.futuresColTime,
+                  S.futuresColSymbol,
+                  S.futuresColType,
+                  S.futuresColSide,
+                  S.futuresColPrice,
+                  S.futuresColAmount,
+                  S.futuresColFilled,
+                  S.futuresColStatus,
+                ],
+                emptyLabel: S.futuresNoHistory,
+              ),
+            _PosTab.tradeHistory => _headerOnlyTable(
+                columns: [
+                  S.futuresColTime,
+                  S.futuresColSymbol,
+                  S.futuresColSide,
+                  S.futuresColPrice,
+                  S.futuresColAmount,
+                  S.futuresColFee,
+                  S.futuresColPnl,
+                ],
+                emptyLabel: S.futuresNoHistory,
+              ),
+          },
+        ],
+      ),
+    );
+  }
+
+  /// Renders the real column-header row for a tab even while there's no
+  /// data behind it yet — an empty table with its structure intact reads
+  /// as "not implemented yet" far less than a lone floating sentence does,
+  /// and matches how every real exchange keeps headers up on empty tabs.
+  Widget _headerOnlyTable({required List<String> columns, required String emptyLabel}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final minWidth = columns.length * 120.0;
+        final table = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [for (final c in columns) _cell(c, flex: 1, header: true)],
+              ),
+            ),
+            const Divider(height: 1, color: NexbitColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Center(child: Text(emptyLabel, style: NexbitText.body(fontSize: 12.5, color: NexbitColors.muted2))),
+            ),
+          ],
+        );
+        if (constraints.maxWidth >= minWidth) return table;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: minWidth, child: table),
+        );
+      },
+    );
+  }
+
+  Widget _positionsTable() {
+    if (widget.positions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(28),
+        child: Center(child: Text(S.futuresNoPositions, style: NexbitText.body(fontSize: 12.5, color: NexbitColors.muted2))),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const minWidth = 760.0;
+        final table = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  _cell(S.futuresColContract, flex: 2, header: true),
+                  _cell(S.futuresColSide, flex: 1, header: true),
+                  _cell(S.futuresColSize, flex: 2, header: true),
+                  _cell(S.futuresColEntryPrice, flex: 2, header: true),
+                  _cell(S.futuresColMarkPrice, flex: 2, header: true),
+                  _cell(S.futuresColPnl, flex: 2, header: true),
+                  _cell(S.futuresColLiqPrice, flex: 2, header: true),
+                  _cell('', flex: 1, header: true),
+                ],
+              ),
+            ),
+            for (final p in widget.positions) _positionRow(p),
+          ],
+        );
+        if (constraints.maxWidth >= minWidth) return table;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: minWidth, child: table),
+        );
+      },
+    );
+  }
+
+  Widget _positionRow(FuturesPosition p) {
+    final mark = widget.markPriceOf(p.contract.id);
+    final pnl = p.pnl(mark);
+    final pnlPct = p.pnlPercent(mark);
+    final pnlColor = pnl >= 0 ? NexbitColors.up : NexbitColors.down;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          _cell(p.contract.label, flex: 2, bold: true),
+          Expanded(
+            flex: 1,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (p.side == OrderSide.long ? NexbitColors.up : NexbitColors.down).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    p.side == OrderSide.long ? S.futuresLong : S.futuresShort,
+                    textAlign: TextAlign.center,
+                    style: NexbitText.body(
+                      fontSize: 11.5,
+                      weight: FontWeight.w700,
+                      color: p.side == OrderSide.long ? NexbitColors.up : NexbitColors.down,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${p.marginMode == MarginMode.cross ? S.futuresMarginModeCross : S.futuresMarginModeIsolated} ${p.leverage}x',
+                  style: NexbitText.body(fontSize: 10, color: NexbitColors.muted2),
+                ),
+              ],
+            ),
+          ),
+          _cell('${p.size.toStringAsFixed(2)} ${p.contract.id}', flex: 2, mono: true),
+          _cell(formatUsdt(p.entryPrice, p.contract.decimals), flex: 2, mono: true),
+          _cell(formatUsdt(mark, p.contract.decimals), flex: 2, mono: true),
+          Expanded(
+            flex: 2,
+            child: Text(
+              '${pnl >= 0 ? '+' : ''}${pnl.abs().toStringAsFixed(2)} ${p.contract.quote}\n(${pnl >= 0 ? '+' : ''}${pnlPct.toStringAsFixed(2)}%)',
+              style: NexbitText.mono(fontSize: 11.5, weight: FontWeight.w700, color: pnlColor),
+            ),
+          ),
+          _cell(formatUsdt(p.liqPrice, p.contract.decimals), flex: 2, mono: true, color: NexbitColors.down),
+          Expanded(
+            flex: 1,
+            child: OutlinedButton(
+              onPressed: () => widget.onClose(p),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: NexbitColors.text,
+                side: const BorderSide(color: NexbitColors.line),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              child: Text(S.futuresClose, style: NexbitText.body(fontSize: 11.5)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cell(String text, {required int flex, bool header = false, bool bold = false, bool mono = false, Color? color}) {
+    final style = header
+        ? NexbitText.mono(fontSize: 10.5, color: NexbitColors.muted2)
+        : mono
+            ? NexbitText.mono(fontSize: 12, color: color ?? NexbitColors.text)
+            : NexbitText.body(fontSize: 12.5, weight: bold ? FontWeight.w700 : FontWeight.w400, color: color ?? NexbitColors.text);
+    return Expanded(flex: flex, child: Text(text, style: style, overflow: TextOverflow.ellipsis));
+  }
+}
+
+class _Tab extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _Tab(this.label, {required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          border: active ? const Border(bottom: BorderSide(color: NexbitColors.accent, width: 2)) : null,
+        ),
+        child: Text(
+          label,
+          style: NexbitText.body(
+            fontSize: 13,
+            weight: active ? FontWeight.w600 : FontWeight.w400,
+            color: active ? NexbitColors.text : NexbitColors.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}

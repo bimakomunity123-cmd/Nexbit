@@ -1,0 +1,29 @@
+name: flutter_application_1
+description: "Nexbit — trading aset digital secepat kamu berpikir."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^6.0.0
+  webview_flutter: ^4.4.0
+  # Web platform implementation for webview_flutter — not in the README
+  # (it's mobile-only there), added so the chart also renders when
+  # previewing in a browser, which is the only runnable target here.
+  webview_flutter_web: ^0.2.0
+  # Persists the language toggle and the account menu's Preferensi/Keamanan
+  # settings across page reloads (see core/prefs/app_prefs.dart). Nothing
+  # else in this demo — login session, mock trading data — is persisted.
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
