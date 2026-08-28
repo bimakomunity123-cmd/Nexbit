@@ -42,12 +42,27 @@ Just auth. Balances, orders, positions, and real market data are still
 mock state on the Flutter side — wiring those to this backend (or a
 real market-data provider) is the next slice of Phase 1, not done here.
 
-## Deploying
+## Deploying (Render)
 
-Not deployed anywhere yet — the live GitHub Pages demo currently has no
-backend to call. Render, Railway, or Fly.io all have a free tier that
-fits this app; whichever you pick, set `CORS_ORIGINS` to the deployed
-API's actual allowed frontend origin(s) and `DATABASE_URL` to a real
-Postgres instance instead of SQLite (SQLite's file-based storage doesn't
-survive most hosts' ephemeral filesystems, and won't safely support
-concurrent connections in production anyway).
+`render.yaml` at the repo root is a Render Blueprint — it provisions
+both the API service and a Postgres database in one go, with
+`DATABASE_URL` wired between them automatically and `JWT_SECRET`
+auto-generated (nobody needs to invent or store one by hand).
+
+1. Push this repo to GitHub (already done — see the project's git
+   history) on whichever branch has this backend.
+2. Render dashboard → **New** → **Blueprint** → pick this repo and
+   branch. Render reads `render.yaml` and shows what it's about to
+   create (a web service + a free Postgres instance) — confirm.
+3. Wait for the first deploy to finish, then hit
+   `https://<your-service>.onrender.com/health` to confirm it's alive.
+4. Update the Flutter app's `kApiBaseUrl`
+   (`lib/core/api/api_client.dart`) to that URL (or pass
+   `--dart-define=API_BASE_URL=https://<your-service>.onrender.com`
+   at build time instead of hardcoding it) before rebuilding/redeploying
+   the frontend — otherwise it's still pointed at `localhost:8020`.
+
+Render's free web service tier spins down after inactivity and takes a
+few seconds to wake back up on the next request — expect a slow first
+login after the app has been idle. Check Render's current pricing page
+for up-to-date free-tier limits; they change over time.

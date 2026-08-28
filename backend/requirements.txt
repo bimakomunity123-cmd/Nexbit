@@ -5,3 +5,10 @@ bcrypt==5.0.0
 pyjwt==2.13.0
 python-dotenv==1.2.3
 pydantic[email]==2.13.4
+# Postgres driver — needed once DATABASE_URL points at a real Postgres
+# instance (e.g. Render's managed Postgres) instead of local SQLite.
+# NOTE: no prebuilt wheel for very new Python versions on Windows yet
+# (e.g. 3.14) as of writing — pip tries to build from source and fails
+# without pg_config installed. Harmless for local dev, which stays on
+# SQLite; Render's Linux build environment has proper wheels for this.
+psycopg2-binary==2.9.10
