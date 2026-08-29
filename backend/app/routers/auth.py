@@ -1,58 +1,69 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from flask import Blueprint, jsonify, request
 
-from ..database import get_db
+from ..database import SessionLocal
 from ..models import User
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from ..security import create_access_token, decode_access_token, hash_password, verify_password
 
-router = APIRouter(prefix="/auth", tags=["auth"])
-_bearer = HTTPBearer(auto_error=False)
+auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
-) -> User:
-    if credentials is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token")
-    user_id = decode_access_token(credentials.credentials)
+def _current_user(db):
+    """Reads the Bearer token from the request and resolves it to a User,
+    or None if missing/invalid/expired — callers turn that into a 401."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    user_id = decode_access_token(auth_header.removeprefix("Bearer ").strip())
     if user_id is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User no longer exists")
-    return user
+        return None
+    return db.get(User, user_id)
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == body.email.lower()).first()
-    if existing is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email sudah terdaftar")
+@auth_bp.post("/register")
+def register():
+    body = RegisterRequest.model_validate(request.get_json(force=True, silent=False) or {})
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == body.email.lower()).first()
+        if existing is not None:
+            return jsonify({"detail": "Email sudah terdaftar"}), 409
 
-    user = User(name=body.name.strip(), email=body.email.lower(), password_hash=hash_password(body.password))
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+        user = User(name=body.name.strip(), email=body.email.lower(), password_hash=hash_password(body.password))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    token = create_access_token(subject=user.id)
-    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
-
-
-@router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email.lower()).first()
-    # Same error for "no such user" and "wrong password" — don't leak
-    # which one it was.
-    if user is None or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Email atau password salah")
-
-    token = create_access_token(subject=user.id)
-    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+        token = create_access_token(subject=user.id)
+        return jsonify(TokenResponse(access_token=token, user=UserOut.model_validate(user)).model_dump(mode="json")), 201
+    finally:
+        db.close()
 
 
-@router.get("/me", response_model=UserOut)
-def me(current_user: User = Depends(get_current_user)):
-    return UserOut.model_validate(current_user)
+@auth_bp.post("/login")
+def login():
+    body = LoginRequest.model_validate(request.get_json(force=True, silent=False) or {})
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == body.email.lower()).first()
+        # Same error for "no such user" and "wrong password" — don't leak
+        # which one it was.
+        if user is None or not verify_password(body.password, user.password_hash):
+            return jsonify({"detail": "Email atau password salah"}), 401
+
+        token = create_access_token(subject=user.id)
+        return jsonify(TokenResponse(access_token=token, user=UserOut.model_validate(user)).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@auth_bp.get("/me")
+def me():
+    db = SessionLocal()
+    try:
+        user = _current_user(db)
+        if user is None:
+            return jsonify({"detail": "Missing or invalid bearer token"}), 401
+        return jsonify(UserOut.model_validate(user).model_dump(mode="json"))
+    finally:
+        db.close()

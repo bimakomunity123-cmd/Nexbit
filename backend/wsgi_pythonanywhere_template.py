@@ -1,8 +1,10 @@
 """Template for PythonAnywhere's WSGI config file.
 
-PythonAnywhere's free ("Beginner") web apps are served over WSGI, not
-ASGI, so the FastAPI app (which speaks ASGI) needs wrapping — that's
-what a2wsgi does below.
+The backend is a Flask app, which speaks WSGI natively — no adapter
+needed (an earlier version of this file used a2wsgi to bridge a FastAPI/
+ASGI app, which turned out to hang under PythonAnywhere's uWSGI setup
+for reasons not worth chasing further; Flask sidesteps the whole
+problem).
 
 This file is a TEMPLATE, not something PythonAnywhere reads directly.
 On the "Web" tab of your PythonAnywhere dashboard, open the actual WSGI
@@ -30,7 +32,4 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{PROJECT_DIR}/nexbit.db")
 os.environ.setdefault("CORS_ORIGINS", "https://bimakomunity123-cmd.github.io")
 os.environ.setdefault("CORS_ORIGIN_REGEX", r"http://(localhost|127\.0\.0\.1)(:\d+)?")
 
-from a2wsgi import ASGIMiddleware  # noqa: E402
-from app.main import app as _fastapi_app  # noqa: E402
-
-application = ASGIMiddleware(_fastapi_app)
+from app.main import app as application  # noqa: E402

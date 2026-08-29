@@ -1,6 +1,6 @@
 """App configuration, loaded from environment variables (.env in dev).
 
-JWT_SECRET has a dev-only fallback so `uvicorn app.main:app` works out of
+JWT_SECRET has a dev-only fallback so `python -m app.main` works out of
 the box with zero setup, but that fallback is intentionally obvious and
 MUST be overridden (via a real .env, not committed) before this is ever
 exposed to the internet — anyone who reads this file could forge tokens

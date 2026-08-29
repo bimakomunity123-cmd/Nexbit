@@ -6,11 +6,19 @@ launch-readiness roadmap — the part that's realistic to build directly;
 see the project's launch-readiness assessment for what's still missing
 (real market data, custody, compliance, etc).
 
-FastAPI + SQLAlchemy + SQLite (swap to Postgres later by changing
+Flask + SQLAlchemy + SQLite (swap to Postgres later by changing
 `DATABASE_URL` — nothing else needs to change). Password hashing uses
 `bcrypt` directly, not `passlib` — passlib's bcrypt backend is broken
 against `bcrypt>=4.1` (raises `AttributeError: module 'bcrypt' has no
 attribute '__about__'`), a known upstream incompatibility.
+
+Originally built with FastAPI, rewritten to Flask after FastAPI (served
+via an ASGI→WSGI adapter, `a2wsgi`) hung on every real HTTP request once
+deployed under PythonAnywhere's uWSGI — worked fine called directly in a
+Python console, timed out (504) over actual HTTP, and wasn't worth
+chasing further. Flask speaks WSGI natively, which every one of these
+hosts (PythonAnywhere, Render via gunicorn) supports without an adapter
+in the loop.
 
 ## Run it
 
@@ -22,10 +30,10 @@ python3 -m venv .venv
 
 cp .env.example .env   # then edit JWT_SECRET at minimum
 
-./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8020
+./.venv/Scripts/python.exe -m app.main
 ```
 
-Interactive API docs at `http://localhost:8020/docs` once it's running.
+Runs on `http://localhost:8020` with the debug reloader on.
 
 ## Endpoints
 
@@ -54,8 +62,8 @@ auto-generated (nobody needs to invent or store one by hand).
 2. Render dashboard → **New** → **Blueprint** → pick this repo and
    branch. Render reads `render.yaml` and shows what it's about to
    create (a web service + a free Postgres instance) — confirm.
-3. Wait for the first deploy to finish, then hit
-   `https://<your-service>.onrender.com/health` to confirm it's alive.
+3. Wait for the first deploy to finish (it runs `gunicorn app.main:app`),
+   then hit `https://<your-service>.onrender.com/health` to confirm it's alive.
 4. Update the Flutter app's `kApiBaseUrl`
    (`lib/core/api/api_client.dart`) to that URL (or pass
    `--dart-define=API_BASE_URL=https://<your-service>.onrender.com`

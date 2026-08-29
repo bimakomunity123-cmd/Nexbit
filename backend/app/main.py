@@ -1,29 +1,46 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import re
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from pydantic import ValidationError
+from werkzeug.exceptions import HTTPException
 
 from .config import CORS_ORIGIN_REGEX, CORS_ORIGINS
 from .database import Base, engine
-from .routers import auth
+from .routers.auth import auth_bp
 
 # Dev-friendly: create tables on startup instead of requiring a separate
 # migration step. Fine for SQLite + this early stage; swap for real
 # migrations (Alembic) once the schema needs to evolve without wiping data.
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Nexbit API", version="0.1.0")
+app = Flask(__name__)
+CORS(app, origins=[*CORS_ORIGINS, re.compile(CORS_ORIGIN_REGEX)], supports_credentials=True)
+app.register_blueprint(auth_bp)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_origin_regex=CORS_ORIGIN_REGEX,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-app.include_router(auth.router)
+@app.errorhandler(ValidationError)
+def handle_validation_error(err: ValidationError):
+    # Mirrors FastAPI's {"detail": ...} error shape so api_client.dart's
+    # error handling doesn't need to know which backend framework is
+    # behind it.
+    return jsonify({"detail": err.errors()}), 422
+
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(err: HTTPException):
+    # Flask/Werkzeug's default error pages are HTML — normalize to the
+    # same {"detail": ...} JSON shape as everything else (covers e.g. a
+    # malformed/missing JSON body, 404, 405).
+    return jsonify({"detail": err.description or err.name}), err.code or 500
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return jsonify({"status": "ok"})
+
+
+if __name__ == "__main__":
+    # Local dev only — `python -m app.main` from backend/. Production
+    # (Render, PythonAnywhere) serves `app` via gunicorn/WSGI instead.
+    app.run(host="0.0.0.0", port=8020, debug=True)

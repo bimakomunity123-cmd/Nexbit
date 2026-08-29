@@ -1,12 +1,14 @@
 # Deploying to PythonAnywhere (free tier, no card required)
 
 PythonAnywhere's free "Beginner" account doesn't ask for payment info,
-which is why this app ended up here instead of Render — but its free
-web apps run over WSGI, not ASGI, so FastAPI needs the small adapter
-already wired up in `wsgi_pythonanywhere_template.py` (via `a2wsgi`,
-already in `requirements.txt`). Its per-user disk is also persistent
-(unlike most container-based PaaS), so SQLite is genuinely fine here —
-no separate database service needed.
+which is why this app ended up here instead of Render. Its free web
+apps run over WSGI, and the backend is a Flask app (WSGI natively) —
+`wsgi_pythonanywhere_template.py` just imports it directly, no adapter
+needed. (An earlier version used FastAPI over an ASGI→WSGI adapter,
+which hung on every real request under PythonAnywhere's uWSGI setup for
+reasons not worth chasing — Flask sidesteps that entirely.) Its
+per-user disk is also persistent (unlike most container-based PaaS), so
+SQLite is genuinely fine here — no separate database service needed.
 
 ## Steps
 
