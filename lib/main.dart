@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'core/i18n/app_locale.dart';
+import 'core/market_data/live_price_service.dart';
 import 'core/prefs/app_prefs.dart';
 import 'features/auth/presentation/pages/nexbit_forgot_password_page.dart';
 import 'features/auth/presentation/pages/nexbit_login_page.dart';
@@ -16,6 +17,9 @@ Future<void> main() async {
   // Loads the persisted language (and arms saving future changes) before
   // the first frame, so a reload doesn't silently reset it to Indonesian.
   await AppPrefs.init();
+  // Starts the CoinGecko polling loop once for the whole app lifetime —
+  // see core/market_data/live_price_service.dart.
+  LivePriceService.start();
   runApp(const NexbitApp());
 }
 

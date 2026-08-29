@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
+import '../../../../core/market_data/live_price_service.dart';
+import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../../auth/presentation/pages/nexbit_register_page.dart';
@@ -32,9 +34,25 @@ class _NexbitPricePageState extends State<NexbitPricePage> {
   AssetCategory? _category; // null = Semua
   String _search = '';
 
+  @override
+  void initState() {
+    super.initState();
+    LivePriceService.prices.addListener(_onLiveUpdate);
+  }
+
+  @override
+  void dispose() {
+    LivePriceService.prices.removeListener(_onLiveUpdate);
+    super.dispose();
+  }
+
+  void _onLiveUpdate() {
+    if (mounted) setState(() {});
+  }
+
   List<TradingPair> get _filtered {
     final term = _search.trim().toLowerCase();
-    return kTradingPairs.where((p) {
+    return liveTradingPairs().where((p) {
       final matchCat = _category == null || p.category == _category;
       final matchTerm =
           term.isEmpty || p.id.toLowerCase().contains(term) || p.name.toLowerCase().contains(term);
@@ -57,9 +75,10 @@ class _NexbitPricePageState extends State<NexbitPricePage> {
 
   @override
   Widget build(BuildContext context) {
-    final topGainer = kTradingPairs.reduce((a, b) => _changeValue(a.change) >= _changeValue(b.change) ? a : b);
-    final highestVolume = kTradingPairs.reduce((a, b) => _pseudoVolume(a) >= _pseudoVolume(b) ? a : b);
-    final mostPopular = kTradingPairs.firstWhere((p) => p.id == 'BTC', orElse: () => kTradingPairs.first);
+    final livePairs = liveTradingPairs();
+    final topGainer = livePairs.reduce((a, b) => _changeValue(a.change) >= _changeValue(b.change) ? a : b);
+    final highestVolume = livePairs.reduce((a, b) => _pseudoVolume(a) >= _pseudoVolume(b) ? a : b);
+    final mostPopular = livePairs.firstWhere((p) => p.id == 'BTC', orElse: () => livePairs.first);
 
     // Listens to appLocale directly so this page rebuilds with fresh text
     // whenever the ID/EN toggle flips — independent of Navigator/route

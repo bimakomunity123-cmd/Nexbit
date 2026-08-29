@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/strings.dart';
+import '../../../../core/market_data/live_price_service.dart';
+import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../domain/models/trading_pair.dart';
 
@@ -17,9 +19,25 @@ class _PairsPanelState extends State<PairsPanel> {
   AssetCategory? _category; // null = "Semua"
   String _search = '';
 
+  @override
+  void initState() {
+    super.initState();
+    LivePriceService.prices.addListener(_onLiveUpdate);
+  }
+
+  @override
+  void dispose() {
+    LivePriceService.prices.removeListener(_onLiveUpdate);
+    super.dispose();
+  }
+
+  void _onLiveUpdate() {
+    if (mounted) setState(() {});
+  }
+
   List<TradingPair> get _filtered {
     final term = _search.trim().toLowerCase();
-    return kTradingPairs.where((p) {
+    return liveTradingPairs().where((p) {
       final matchCat = _category == null || p.category == _category;
       final matchTerm = term.isEmpty ||
           p.id.toLowerCase().contains(term) ||

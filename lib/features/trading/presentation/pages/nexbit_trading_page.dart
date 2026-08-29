@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
+import '../../../../core/market_data/live_price_service.dart';
+import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../domain/models/trading_pair.dart';
 import '../widgets/trading_topbar.dart';
@@ -26,7 +28,27 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
   static const _hairline = BoxDecoration(border: Border(right: BorderSide(color: NexbitColors.line)));
 
   @override
+  void initState() {
+    super.initState();
+    LivePriceService.prices.addListener(_onLiveUpdate);
+  }
+
+  @override
+  void dispose() {
+    LivePriceService.prices.removeListener(_onLiveUpdate);
+    super.dispose();
+  }
+
+  void _onLiveUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Live-priced copy of whatever's selected — falls back to _selected's
+    // own (mock) values for anything CoinGecko doesn't track, e.g. forex.
+    final live = withLivePrice(_selected);
+
     // Listens to appLocale directly so this page rebuilds with fresh text
     // whenever the ID/EN toggle flips — independent of Navigator/route
     // mechanics, which don't automatically re-invoke a route's builder.
@@ -39,14 +61,14 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               TradingTopbar(
-                pair: _selected,
+                pair: live,
                 onLogoTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
               ),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final wide = constraints.maxWidth >= 1180;
-                    return wide ? _wideLayout() : _narrowLayout();
+                    return wide ? _wideLayout(live) : _narrowLayout(live);
                   },
                 ),
               ),
@@ -58,7 +80,7 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
   }
 
   /// Desktop/tablet: 3-column grid — pairs+trades | chart+panel | orderbook.
-  Widget _wideLayout() {
+  Widget _wideLayout(TradingPair live) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -68,9 +90,9 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
             decoration: _hairline,
             child: Column(
               children: [
-                SizedBox(height: 460, child: PairsPanel(selected: _selected, onSelect: _selectPair)),
+                SizedBox(height: 460, child: PairsPanel(selected: live, onSelect: _selectPair)),
                 const Divider(height: 1, color: NexbitColors.line),
-                Expanded(child: MarketTradesPanel(pair: _selected)),
+                Expanded(child: MarketTradesPanel(pair: live)),
               ],
             ),
           ),
@@ -83,43 +105,43 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
                 // Given a generous flex share so the chart grows into the
                 // available height instead of sitting squashed at a fixed
                 // size with empty space left underneath it.
-                Expanded(flex: 5, child: TradingViewChart(symbol: _selected.tvSymbol)),
+                Expanded(flex: 5, child: TradingViewChart(symbol: live.tvSymbol)),
                 const Divider(height: 1, color: NexbitColors.line),
                 // A bit of top breathing room so Beli/Jual doesn't sit
                 // flush against the chart divider.
                 Padding(
                   padding: const EdgeInsets.only(top: 18),
-                  child: OrderFormPanel(pair: _selected),
+                  child: OrderFormPanel(pair: live),
                 ),
                 const Divider(height: 1, color: NexbitColors.line),
                 // Fills what would otherwise be empty space below the
                 // order form with a real Open Orders / Order History table.
-                Expanded(flex: 4, child: OpenOrdersPanel(pair: _selected)),
+                Expanded(flex: 4, child: OpenOrdersPanel(pair: live)),
               ],
             ),
           ),
         ),
-        SizedBox(width: 296, child: OrderBookPanel(pair: _selected)),
+        SizedBox(width: 296, child: OrderBookPanel(pair: live)),
       ],
     );
   }
 
   /// Mobile: everything stacked and scrollable.
-  Widget _narrowLayout() {
+  Widget _narrowLayout(TradingPair live) {
     return SingleChildScrollView(
       child: Column(
         children: [
-          SizedBox(height: 420, child: TradingViewChart(symbol: _selected.tvSymbol)),
+          SizedBox(height: 420, child: TradingViewChart(symbol: live.tvSymbol)),
           const Divider(height: 1, color: NexbitColors.line),
-          OrderFormPanel(pair: _selected),
+          OrderFormPanel(pair: live),
           const Divider(height: 1, color: NexbitColors.line),
-          SizedBox(height: 360, child: PairsPanel(selected: _selected, onSelect: _selectPair)),
+          SizedBox(height: 360, child: PairsPanel(selected: live, onSelect: _selectPair)),
           const Divider(height: 1, color: NexbitColors.line),
-          SizedBox(height: 320, child: OrderBookPanel(pair: _selected)),
+          SizedBox(height: 320, child: OrderBookPanel(pair: live)),
           const Divider(height: 1, color: NexbitColors.line),
-          SizedBox(height: 300, child: MarketTradesPanel(pair: _selected)),
+          SizedBox(height: 300, child: MarketTradesPanel(pair: live)),
           const Divider(height: 1, color: NexbitColors.line),
-          SizedBox(height: 280, child: OpenOrdersPanel(pair: _selected)),
+          SizedBox(height: 280, child: OpenOrdersPanel(pair: live)),
         ],
       ),
     );

@@ -1,11 +1,14 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
+import '../../../../core/market_data/live_price_service.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../models/ticker_asset.dart';
 
+/// Header + row prices come from [LivePriceService] (real CoinGecko data)
+/// when available, falling back to [widget.tickers]' static mock values
+/// before the first fetch completes or if the feed is ever unreachable —
+/// so this card never goes blank over a flaky price API.
 class PriceTickerCard extends StatefulWidget {
   final List<TickerAsset> tickers;
   final VoidCallback? onViewAll;
@@ -17,39 +20,33 @@ class PriceTickerCard extends StatefulWidget {
 }
 
 class _PriceTickerCardState extends State<PriceTickerCard> {
-  Timer? _timer;
-  int _basePrice = 1147629543;
   final _idFormat = _IdrFormatter();
-  final _rng = Random();
 
   @override
   void initState() {
     super.initState();
-    // Cosmetic live-price flicker so the card doesn't look static —
-    // swap this for a real feed (websocket/REST) in production.
-    _timer = Timer.periodic(const Duration(milliseconds: 2200), (_) {
-      setState(() {
-        _basePrice += ((_rng.nextDouble() - 0.5) * 40000).round();
-      });
-    });
-    // React immediately to the ID/EN toggle instead of waiting for the
-    // next cosmetic price tick to happen to rebuild this card.
-    appLocale.addListener(_onLocaleChanged);
+    // React immediately to the ID/EN toggle and to new live prices coming
+    // in, instead of only updating on the next unrelated rebuild.
+    appLocale.addListener(_onExternalChange);
+    LivePriceService.prices.addListener(_onExternalChange);
   }
 
-  void _onLocaleChanged() {
+  void _onExternalChange() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    appLocale.removeListener(_onLocaleChanged);
+    appLocale.removeListener(_onExternalChange);
+    LivePriceService.prices.removeListener(_onExternalChange);
     super.dispose();
   }
 
+  LiveCoinPrice? _live(String symbol) => LivePriceService.prices.value[symbol];
+
   @override
   Widget build(BuildContext context) {
+    final btcLive = _live('BTC');
     return Container(
       width: 380,
       decoration: BoxDecoration(
@@ -72,7 +69,7 @@ class _PriceTickerCardState extends State<PriceTickerCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(),
+          _buildHeader(btcLive),
           for (final t in widget.tickers) _buildRow(t),
           _buildFooter(),
         ],
@@ -80,7 +77,12 @@ class _PriceTickerCardState extends State<PriceTickerCard> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(LiveCoinPrice? btcLive) {
+    final priceStr = btcLive != null ? _idFormat.format(btcLive.priceIdr.round()) : widget.tickers.first.price;
+    final changePercent = btcLive?.changePercent24h;
+    final isUp = changePercent == null ? true : changePercent >= 0;
+    final changeStr = changePercent == null ? '0.01%' : '${changePercent.abs().toStringAsFixed(2)}%';
+
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
       decoration: BoxDecoration(
@@ -111,7 +113,7 @@ class _PriceTickerCardState extends State<PriceTickerCard> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                _idFormat.format(_basePrice),
+                priceStr,
                 style: NexbitText.mono(fontSize: 28, weight: FontWeight.w700),
               ),
               const SizedBox(width: 8),
@@ -120,8 +122,8 @@ class _PriceTickerCardState extends State<PriceTickerCard> {
           ),
           const SizedBox(height: 4),
           Text(
-            '▲ 0.01% · ${S.tickerPeriod}',
-            style: NexbitText.mono(fontSize: 13, color: NexbitColors.up),
+            '${isUp ? '▲' : '▼'} $changeStr · ${S.tickerPeriod}',
+            style: NexbitText.mono(fontSize: 13, color: isUp ? NexbitColors.up : NexbitColors.down),
           ),
         ],
       ),
@@ -130,6 +132,11 @@ class _PriceTickerCardState extends State<PriceTickerCard> {
 
   Widget _buildRow(TickerAsset t) {
     final isLast = widget.tickers.last == t;
+    final live = _live(t.symbol);
+    final priceStr = live != null ? _idFormat.format(live.priceIdr.round()) : t.price;
+    final isUp = live != null ? live.changePercent24h >= 0 : t.isUp;
+    final changeStr = live != null ? '${isUp ? '▲' : '▼'} ${live.changePercent24h.abs().toStringAsFixed(2)}%' : t.change;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
       decoration: BoxDecoration(
@@ -173,13 +180,13 @@ class _PriceTickerCardState extends State<PriceTickerCard> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(t.price, style: NexbitText.mono(fontSize: 14, weight: FontWeight.w600)),
+              Text(priceStr, style: NexbitText.mono(fontSize: 14, weight: FontWeight.w600)),
               const SizedBox(height: 2),
               Text(
-                t.change,
+                changeStr,
                 style: NexbitText.mono(
                   fontSize: 12,
-                  color: t.isUp ? NexbitColors.up : NexbitColors.down,
+                  color: isUp ? NexbitColors.up : NexbitColors.down,
                 ),
               ),
             ],

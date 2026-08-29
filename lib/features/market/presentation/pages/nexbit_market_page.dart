@@ -2,6 +2,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
+import '../../../../core/market_data/live_price_service.dart';
+import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../../auth/presentation/pages/nexbit_register_page.dart';
@@ -41,10 +43,29 @@ class _NexbitMarketPageState extends State<NexbitMarketPage> {
   _MarketTab _tab = _MarketTab.all;
   String _search = '';
 
-  static final _cryptoPairs = kTradingPairs.where((p) => p.category == AssetCategory.crypto).toList();
-  static final _forexPairs = kTradingPairs.where((p) => p.category == AssetCategory.forex).toList();
-  static final _allStats = buildMarketMockStats(_cryptoPairs);
-  static final _forexStats = buildForexVolumeStats(_forexPairs);
+  // Regular getters (not `static final`) so every read reflects whatever
+  // LivePriceService last fetched — recomputed on each build, which the
+  // _onLiveUpdate listener below triggers whenever a new price tick lands.
+  List<TradingPair> get _cryptoPairs => liveTradingPairs().where((p) => p.category == AssetCategory.crypto).toList();
+  List<TradingPair> get _forexPairs => liveTradingPairs().where((p) => p.category == AssetCategory.forex).toList();
+  List<MarketMockStats> get _allStats => buildMarketMockStats(_cryptoPairs);
+  List<MarketMockStats> get _forexStats => buildForexVolumeStats(_forexPairs);
+
+  @override
+  void initState() {
+    super.initState();
+    LivePriceService.prices.addListener(_onLiveUpdate);
+  }
+
+  @override
+  void dispose() {
+    LivePriceService.prices.removeListener(_onLiveUpdate);
+    super.dispose();
+  }
+
+  void _onLiveUpdate() {
+    if (mounted) setState(() {});
+  }
 
   double _changeValue(String change) => double.tryParse(change.replaceAll('%', '').replaceAll('+', '')) ?? 0;
 

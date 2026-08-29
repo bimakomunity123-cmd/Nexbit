@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
+import '../../../../core/market_data/live_price_service.dart';
+import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../../auth/presentation/pages/nexbit_register_page.dart';
@@ -47,8 +49,28 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   // are sized against the same number the Account Info card shows.
   static const _startingBalance = 1250.0;
 
-  double _markPriceOf(String contractId) =>
-      kAllFuturesContracts.firstWhere((c) => c.id == contractId, orElse: () => _selected).price;
+  @override
+  void initState() {
+    super.initState();
+    LivePriceService.prices.addListener(_onLiveUpdate);
+  }
+
+  @override
+  void dispose() {
+    LivePriceService.prices.removeListener(_onLiveUpdate);
+    super.dispose();
+  }
+
+  // Just triggers a rebuild — build() itself re-derives the live-priced
+  // contract fresh every time (see `live` in build()), so a plain
+  // setState is enough; no need to mutate _selected here.
+  void _onLiveUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  double _markPriceOf(String contractId) => withLiveContractPrice(
+        kAllFuturesContracts.firstWhere((c) => c.id == contractId, orElse: () => _selected),
+      ).price;
 
   double get _availableBalance {
     final usedMargin = _positions.fold(0.0, (sum, p) => sum + p.margin);
@@ -74,12 +96,16 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   void _selectAssetClass(FuturesAssetClass assetClass) {
     setState(() {
       _assetClass = assetClass;
+      // Stored unwrapped — build() applies withLiveContractPrice fresh on
+      // every read, so this doesn't need to pre-apply it here.
       _selected = contractsFor(assetClass).first;
     });
   }
 
   List<FuturesContract> get _filteredContracts {
-    final all = contractsFor(_assetClass);
+    // withLiveContractPrice is a no-op for forex/saham ids (CoinGecko
+    // doesn't track them) — only the crypto tab actually changes here.
+    final all = contractsFor(_assetClass).map(withLiveContractPrice).toList();
     final term = _search.trim().toLowerCase();
     if (term.isEmpty) return all;
     return all.where((c) => c.id.toLowerCase().contains(term) || c.name.toLowerCase().contains(term)).toList();
@@ -87,6 +113,11 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Re-derived fresh on every build (not cached in state) — see
+    // _onLiveUpdate — so the very first render already reflects whatever
+    // LivePriceService has cached, not just ticks that arrive after this
+    // page has mounted.
+    final liveSelected = withLiveContractPrice(_selected);
     return ValueListenableBuilder<AppLocale>(
       valueListenable: appLocale,
       builder: (context, locale, _) => Scaffold(
@@ -148,7 +179,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
                               else
                                 FuturesPairStrip(
                                   contracts: _filteredContracts,
-                                  selected: _selected,
+                                  selected: liveSelected,
                                   onSelect: (c) => setState(() => _selected = c),
                                 ),
                               const SizedBox(height: 20),
@@ -167,21 +198,21 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(child: _chartColumn()),
+                                    Expanded(child: _chartColumn(liveSelected)),
                                     const SizedBox(width: 16),
-                                    SizedBox(width: 280, child: _orderBookColumn()),
+                                    SizedBox(width: 280, child: _orderBookColumn(liveSelected)),
                                     const SizedBox(width: 16),
-                                    SizedBox(width: 320, child: _orderFormColumn()),
+                                    SizedBox(width: 320, child: _orderFormColumn(liveSelected)),
                                   ],
                                 )
                               else
                                 Column(
                                   children: [
-                                    _chartColumn(),
+                                    _chartColumn(liveSelected),
                                     const SizedBox(height: 16),
-                                    _orderFormColumn(),
+                                    _orderFormColumn(liveSelected),
                                     const SizedBox(height: 16),
-                                    _orderBookColumn(),
+                                    _orderBookColumn(liveSelected),
                                   ],
                                 ),
                               const SizedBox(height: 24),
@@ -244,7 +275,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
     );
   }
 
-  Widget _orderBookColumn() {
+  Widget _orderBookColumn(FuturesContract selected) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -254,7 +285,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
             border: Border.all(color: NexbitColors.line),
           ),
           clipBehavior: Clip.antiAlias,
-          child: FuturesOrderBookPanel(contract: _selected),
+          child: FuturesOrderBookPanel(contract: selected),
         ),
         const SizedBox(height: 16),
         Container(
@@ -263,14 +294,14 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
             border: Border.all(color: NexbitColors.line),
           ),
           clipBehavior: Clip.antiAlias,
-          child: FuturesRecentTradesPanel(contract: _selected),
+          child: FuturesRecentTradesPanel(contract: selected),
         ),
       ],
     );
   }
 
-  Widget _chartColumn() {
-    final mark = _selected.price;
+  Widget _chartColumn(FuturesContract selected) {
+    final mark = selected.price;
     final high = mark * 1.0067;
     final low = mark * 0.9861;
     return Column(
@@ -299,30 +330,30 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
                           width: 24,
                           height: 24,
                           alignment: Alignment.center,
-                          decoration: BoxDecoration(color: _selected.iconColor, shape: BoxShape.circle),
-                          child: Text(_selected.iconLabel,
+                          decoration: BoxDecoration(color: selected.iconColor, shape: BoxShape.circle),
+                          child: Text(selected.iconLabel,
                               style: NexbitText.mono(fontSize: 11, weight: FontWeight.w700, color: const Color(0xFF04120E))),
                         ),
                         const SizedBox(width: 8),
-                        Text('${_selected.label} ${S.futuresPerpetual}',
+                        Text('${selected.label} ${S.futuresPerpetual}',
                             style: NexbitText.body(fontSize: 15, weight: FontWeight.w700)),
                         const SizedBox(width: 12),
-                        Text(formatUsdt(mark, _selected.decimals),
+                        Text(formatUsdt(mark, selected.decimals),
                             style: NexbitText.mono(
                                 fontSize: 16,
                                 weight: FontWeight.w700,
-                                color: _selected.isUp ? NexbitColors.up : NexbitColors.down)),
+                                color: selected.isUp ? NexbitColors.up : NexbitColors.down)),
                         const SizedBox(width: 8),
-                        Text(_selected.change,
+                        Text(selected.change,
                             style: NexbitText.mono(
                                 fontSize: 13,
                                 weight: FontWeight.w600,
-                                color: _selected.isUp ? NexbitColors.up : NexbitColors.down)),
+                                color: selected.isUp ? NexbitColors.up : NexbitColors.down)),
                       ],
                     ),
-                    _stat(S.futuresMarkPrice, formatUsdt(mark, _selected.decimals)),
-                    _stat(S.futures24hHigh, formatUsdt(high, _selected.decimals)),
-                    _stat(S.futures24hLow, formatUsdt(low, _selected.decimals)),
+                    _stat(S.futuresMarkPrice, formatUsdt(mark, selected.decimals)),
+                    _stat(S.futures24hHigh, formatUsdt(high, selected.decimals)),
+                    _stat(S.futures24hLow, formatUsdt(low, selected.decimals)),
                     _stat(S.futures24hVolume, '\$2.4B'),
                     _stat(S.futuresStatFundingRate, '0.01%'),
                   ],
@@ -333,7 +364,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
                 height: 460,
                 child: ClipRRect(
                   borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
-                  child: TradingViewChart(symbol: _selected.tvSymbol, interval: '60'),
+                  child: TradingViewChart(symbol: selected.tvSymbol, interval: '60'),
                 ),
               ),
             ],
@@ -345,7 +376,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
     );
   }
 
-  Widget _orderFormColumn() {
+  Widget _orderFormColumn(FuturesContract selected) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -356,7 +387,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           ),
           clipBehavior: Clip.antiAlias,
           child: FuturesOrderFormPanel(
-            contract: _selected,
+            contract: selected,
             availableBalance: _availableBalance,
             onOpenPosition: _openPosition,
           ),
@@ -369,7 +400,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           realizedPnl: _realizedPnl,
         ),
         const SizedBox(height: 16),
-        FuturesContractDetailsCard(contract: _selected),
+        FuturesContractDetailsCard(contract: selected),
       ],
     );
   }
