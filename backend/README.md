@@ -6,11 +6,19 @@ launch-readiness roadmap — the part that's realistic to build directly;
 see the project's launch-readiness assessment for what's still missing
 (real market data, custody, compliance, etc).
 
-FastAPI + SQLAlchemy + SQLite (swap to Postgres later by changing
+Flask + SQLAlchemy + SQLite (swap to Postgres later by changing
 `DATABASE_URL` — nothing else needs to change). Password hashing uses
 `bcrypt` directly, not `passlib` — passlib's bcrypt backend is broken
 against `bcrypt>=4.1` (raises `AttributeError: module 'bcrypt' has no
 attribute '__about__'`), a known upstream incompatibility.
+
+Originally built with FastAPI, rewritten to Flask after FastAPI (served
+via an ASGI→WSGI adapter, `a2wsgi`) hung on every real HTTP request once
+deployed under PythonAnywhere's uWSGI — worked fine called directly in a
+Python console, timed out (504) over actual HTTP, and wasn't worth
+chasing further. Flask speaks WSGI natively, which every one of these
+hosts (PythonAnywhere, Render via gunicorn) supports without an adapter
+in the loop.
 
 ## Run it
 
@@ -22,10 +30,10 @@ python3 -m venv .venv
 
 cp .env.example .env   # then edit JWT_SECRET at minimum
 
-./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8020
+./.venv/Scripts/python.exe -m app.main
 ```
 
-Interactive API docs at `http://localhost:8020/docs` once it's running.
+Runs on `http://localhost:8020` with the debug reloader on.
 
 ## Endpoints
 
@@ -42,12 +50,27 @@ Just auth. Balances, orders, positions, and real market data are still
 mock state on the Flutter side — wiring those to this backend (or a
 real market-data provider) is the next slice of Phase 1, not done here.
 
-## Deploying
+## Deploying (Render)
 
-Not deployed anywhere yet — the live GitHub Pages demo currently has no
-backend to call. Render, Railway, or Fly.io all have a free tier that
-fits this app; whichever you pick, set `CORS_ORIGINS` to the deployed
-API's actual allowed frontend origin(s) and `DATABASE_URL` to a real
-Postgres instance instead of SQLite (SQLite's file-based storage doesn't
-survive most hosts' ephemeral filesystems, and won't safely support
-concurrent connections in production anyway).
+`render.yaml` at the repo root is a Render Blueprint — it provisions
+both the API service and a Postgres database in one go, with
+`DATABASE_URL` wired between them automatically and `JWT_SECRET`
+auto-generated (nobody needs to invent or store one by hand).
+
+1. Push this repo to GitHub (already done — see the project's git
+   history) on whichever branch has this backend.
+2. Render dashboard → **New** → **Blueprint** → pick this repo and
+   branch. Render reads `render.yaml` and shows what it's about to
+   create (a web service + a free Postgres instance) — confirm.
+3. Wait for the first deploy to finish (it runs `gunicorn app.main:app`),
+   then hit `https://<your-service>.onrender.com/health` to confirm it's alive.
+4. Update the Flutter app's `kApiBaseUrl`
+   (`lib/core/api/api_client.dart`) to that URL (or pass
+   `--dart-define=API_BASE_URL=https://<your-service>.onrender.com`
+   at build time instead of hardcoding it) before rebuilding/redeploying
+   the frontend — otherwise it's still pointed at `localhost:8020`.
+
+Render's free web service tier spins down after inactivity and takes a
+few seconds to wake back up on the next request — expect a slow first
+login after the app has been idle. Check Render's current pricing page
+for up-to-date free-tier limits; they change over time.

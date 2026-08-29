@@ -9,8 +9,15 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import DATABASE_URL
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+# Some hosts (Render included) hand out the old "postgres://" scheme,
+# which SQLAlchemy 1.4+ no longer accepts — normalize it here rather
+# than requiring every deploy target to get this exactly right.
+_db_url = DATABASE_URL
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+
+connect_args = {"check_same_thread": False} if _db_url.startswith("sqlite") else {}
+engine = create_engine(_db_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
