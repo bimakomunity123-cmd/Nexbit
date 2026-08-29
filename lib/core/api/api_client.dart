@@ -1,20 +1,17 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-/// Base URL for the FastAPI backend in backend/. Not deployed anywhere
-/// yet — this only resolves when both the backend (`uvicorn`) and the
-/// Flutter app are running on the same machine, e.g. via
-/// `flutter run -d chrome` during development. The deployed GitHub Pages
-/// demo currently has no backend to reach and will show a network-error
-/// snack on login/register until a real backend URL is deployed and
-/// substituted here (ideally via --dart-define rather than hardcoding).
+/// Base URL for the backend in backend/ — live on PythonAnywhere's free
+/// tier (see backend/DEPLOY_PYTHONANYWHERE.md). Override for local dev
+/// against `python -m app.main` with
+/// `flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8020`.
 const String kApiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://localhost:8020',
+  defaultValue: 'https://morphy.pythonanywhere.com',
 );
 
 /// Thrown for any non-2xx response, carrying the backend's own error
-/// message (FastAPI's `{"detail": "..."}` shape) so callers can show it
+/// message (Flask's `{"detail": "..."}` shape) so callers can show it
 /// directly instead of a generic "something went wrong".
 class ApiException implements Exception {
   final int statusCode;
