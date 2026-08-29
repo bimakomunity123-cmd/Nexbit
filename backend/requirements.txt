@@ -12,3 +12,6 @@ pydantic[email]==2.13.4
 # without pg_config installed. Harmless for local dev, which stays on
 # SQLite; Render's Linux build environment has proper wheels for this.
 psycopg2-binary==2.9.10
+# ASGI→WSGI adapter — only needed on hosts that serve WSGI, not ASGI,
+# apps (PythonAnywhere's free tier). See DEPLOY_PYTHONANYWHERE.md.
+a2wsgi==1.10.7
