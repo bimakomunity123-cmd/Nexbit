@@ -39,6 +39,24 @@ Runs on `http://localhost:8020` with the debug reloader on. Point the
 Flutter app at it with
 `flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8020`.
 
+## Testing
+
+```bash
+./.venv/Scripts/pip.exe install -r requirements-dev.txt   # once, adds pytest
+./.venv/Scripts/python.exe -m pytest tests/ -v
+```
+
+`tests/` covers auth (register/login/me/change-password/profile/
+forgot-reset-password), Futures positions, Spot orders, and the rate
+limits from `app/rate_limit.py` — each against a throwaway SQLite
+database (`conftest.py` points `DATABASE_URL` at a temp file before
+`app` is ever imported, wiped clean before every test) and a reset
+rate-limit counter per test, so tests never see another test's — or a
+real run's — leftover state. Run this before pushing any backend
+change; it's what would have caught the `jsonify(*_UNAUTHORIZED)` bug
+mentioned in this project's history, instead of that only surfacing
+during manual `curl` testing.
+
 ## Endpoints
 
 All error responses share one shape: `{"detail": "..."}`  (or, for a

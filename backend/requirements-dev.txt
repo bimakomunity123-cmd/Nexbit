@@ -1,0 +1,4 @@
+# Only needed to run the test suite (backend/tests/) — not part of the
+# deployed app, so kept out of requirements.txt.
+-r requirements.txt
+pytest==9.1.1
