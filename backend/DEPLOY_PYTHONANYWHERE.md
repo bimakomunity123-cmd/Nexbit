@@ -16,11 +16,14 @@ SQLite is genuinely fine here — no separate database service needed.
    — free "Beginner" plan, no card.
 
 2. **Open a Bash console** (Dashboard → New console → Bash) and clone
-   this repo's backend branch:
+   this repo:
    ```bash
-   git clone -b backend-deploy https://github.com/bimakomunity123-cmd/Nexbit.git
+   git clone https://github.com/bimakomunity123-cmd/Nexbit.git
    cd Nexbit/backend
    ```
+   (The backend was originally developed on a `backend-deploy` branch
+   before it existed on `main` at all — that branch is now stale and
+   long behind `main`; always deploy from `main`.)
 
 3. **Create a virtualenv and install dependencies** (still in that
    Bash console):

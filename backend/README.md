@@ -1,10 +1,12 @@
 # Nexbit backend
 
-Real auth API (register/login/JWT) replacing the "any credentials
-accepted" behavior in the Flutter app. This is Phase 1 of the
-launch-readiness roadmap — the part that's realistic to build directly;
-see the project's launch-readiness assessment for what's still missing
-(real market data, custody, compliance, etc).
+Real API behind the Flutter app's auth, Futures balance/positions, and
+Spot wallet/orders — replacing what used to be entirely mock/in-memory
+Flutter state. Live at `https://morphy.pythonanywhere.com`. See the
+root README's [Yang perlu diketahui sebelum dianggap "siap pakai"](../README.md#yang-perlu-diketahui-sebelum-dianggap-siap-pakai)
+section for what's still missing before this could handle real money
+(real market-data verification, a production database, KYC/compliance,
+etc).
 
 Flask + SQLAlchemy + SQLite (swap to Postgres later by changing
 `DATABASE_URL` — nothing else needs to change). Password hashing uses
@@ -33,44 +35,82 @@ cp .env.example .env   # then edit JWT_SECRET at minimum
 ./.venv/Scripts/python.exe -m app.main
 ```
 
-Runs on `http://localhost:8020` with the debug reloader on.
+Runs on `http://localhost:8020` with the debug reloader on. Point the
+Flutter app at it with
+`flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8020`.
 
 ## Endpoints
 
-| Method | Path            | Auth      | Notes                              |
-|--------|-----------------|-----------|-------------------------------------|
-| POST   | `/auth/register`| —         | `{name, email, password}` → token + user |
-| POST   | `/auth/login`   | —         | `{email, password}` → token + user  |
-| GET    | `/auth/me`      | Bearer JWT| Current user from the token         |
-| GET    | `/health`       | —         | Liveness check                      |
+All error responses share one shape: `{"detail": "..."}`  (or, for a
+Pydantic validation failure, `{"detail": [...]}` with per-field errors).
+Every rate limit below returns 429 with `{"detail": "Terlalu banyak
+percobaan. Coba lagi beberapa saat lagi."}` once exceeded.
 
-## What's NOT here yet
+### Auth (`/auth`)
 
-Just auth. Balances, orders, positions, and real market data are still
-mock state on the Flutter side — wiring those to this backend (or a
-real market-data provider) is the next slice of Phase 1, not done here.
+| Method | Path                    | Auth      | Rate limit    | Notes |
+|--------|-------------------------|-----------|----------------|-------|
+| POST   | `/auth/register`        | —         | 10/hour        | `{name, email, password}` → token + user |
+| POST   | `/auth/login`           | —         | 15/5 min       | `{email, password}` → token + user |
+| GET    | `/auth/me`              | Bearer JWT| —              | Current user from the token |
+| POST   | `/auth/change-password` | Bearer JWT| 20/hour        | `{old_password, new_password}` |
+| PATCH  | `/auth/profile`         | Bearer JWT| —              | `{name}` → updated user |
+| POST   | `/auth/forgot-password` | —         | 10/hour        | `{email}` → same response whether or not the email exists; `reset_token` present only if it does (see below) |
+| POST   | `/auth/reset-password`  | —         | 20/hour        | `{token, new_password}` |
 
-## Deploying (Render)
+**Demo-only compromise, not something a real product should do:**
+`/auth/forgot-password` returns the reset token directly in its JSON
+response instead of emailing it, since this app has no email/SMTP
+service configured. It's clearly labeled "Mode Demo" in the Flutter UI.
+The endpoint still can't be used to enumerate accounts — the response
+text is identical either way, only `reset_token`'s presence differs.
 
-`render.yaml` at the repo root is a Render Blueprint — it provisions
-both the API service and a Postgres database in one go, with
-`DATABASE_URL` wired between them automatically and `JWT_SECRET`
-auto-generated (nobody needs to invent or store one by hand).
+### Futures trading (`/trading`)
 
-1. Push this repo to GitHub (already done — see the project's git
-   history) on whichever branch has this backend.
-2. Render dashboard → **New** → **Blueprint** → pick this repo and
-   branch. Render reads `render.yaml` and shows what it's about to
-   create (a web service + a free Postgres instance) — confirm.
-3. Wait for the first deploy to finish (it runs `gunicorn app.main:app`),
-   then hit `https://<your-service>.onrender.com/health` to confirm it's alive.
-4. Update the Flutter app's `kApiBaseUrl`
-   (`lib/core/api/api_client.dart`) to that URL (or pass
-   `--dart-define=API_BASE_URL=https://<your-service>.onrender.com`
-   at build time instead of hardcoding it) before rebuilding/redeploying
-   the frontend — otherwise it's still pointed at `localhost:8020`.
+| Method | Path                              | Auth      | Rate limit | Notes |
+|--------|-----------------------------------|-----------|-------------|-------|
+| GET    | `/trading/account`                | Bearer JWT| —           | `{balance, realized_pnl}` — created on first access |
+| GET    | `/trading/positions`              | Bearer JWT| —           | List of open positions |
+| POST   | `/trading/positions`               | Bearer JWT| 60/min      | `{contract_id, side, size, entry_price, leverage, margin_mode}` |
+| POST   | `/trading/positions/<id>/close`   | Bearer JWT| 60/min      | `{realized_pnl}` — client-computed, see note below |
 
-Render's free web service tier spins down after inactivity and takes a
-few seconds to wake back up on the next request — expect a slow first
-login after the app has been idle. Check Render's current pricing page
-for up-to-date free-tier limits; they change over time.
+### Spot trading (`/spot`)
+
+| Method | Path                        | Auth      | Rate limit | Notes |
+|--------|-----------------------------|-----------|-------------|-------|
+| GET    | `/spot/wallet`              | Bearer JWT| —           | `{idr_balance}` — starts at 50,000,000, created on first access |
+| GET    | `/spot/holdings`            | Bearer JWT| —           | Per-asset quantities currently held (> 0 only) |
+| GET    | `/spot/orders`              | Bearer JWT| —           | All orders, newest first |
+| POST   | `/spot/orders`              | Bearer JWT| 60/min      | `{asset_id, side, order_type, price, amount}` — Market fills immediately (balance/holding updated, 400 if insufficient); Limit/Stop-Limit just get recorded as open |
+| POST   | `/spot/orders/<id>/cancel`  | Bearer JWT| 60/min      | Only works on an order still `open` |
+
+**Demo-only compromise, not something a real product should do:**
+`price`/`entry_price`/`realized_pnl` above are client-supplied and
+trusted as-is — this backend has no live market-data feed of its own to
+verify them against. Fine for this demo's mock trading; a real ledger
+would never trust a client-computed price or PnL figure. Also: neither
+Futures nor Spot has a real matching engine — Limit/Stop-Limit orders
+never auto-fill regardless of price, only Market/Instant orders execute
+immediately.
+
+### Misc
+
+| Method | Path      | Auth | Notes           |
+|--------|-----------|------|------------------|
+| GET    | `/health` | —    | Liveness check  |
+
+## Deploying
+
+**Live today: PythonAnywhere** (free tier, no card required) — see
+[DEPLOY_PYTHONANYWHERE.md](DEPLOY_PYTHONANYWHERE.md) for the full
+walkthrough and how to push updates to it.
+
+`render.yaml` at the repo root is an alternative Render Blueprint
+(web service + Postgres) that was tried first and abandoned — Render's
+free tier requires a payment card even for the Blueprint flow, which is
+why this ended up on PythonAnywhere instead. It's kept in the repo as a
+documented alternative in case that trade-off is ever preferable (e.g.
+Postgres instead of SQLite, no PythonAnywhere CPU-second limits).
+Whichever host is used, update the Flutter app's `kApiBaseUrl`
+(`lib/core/api/api_client.dart`, or `--dart-define=API_BASE_URL=...`
+at build time) to match before rebuilding the frontend.
