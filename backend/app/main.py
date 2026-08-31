@@ -8,20 +8,23 @@ from werkzeug.exceptions import HTTPException
 from .config import CORS_ORIGIN_REGEX, CORS_ORIGINS
 from .database import Base, engine
 from .routers.auth import auth_bp
+from .routers.spot import spot_bp
 from .routers.trading import trading_bp
 
 # Dev-friendly: create tables on startup instead of requiring a separate
 # migration step. Fine for SQLite + this early stage; swap for real
 # migrations (Alembic) once the schema needs to evolve without wiping data.
-# Both router imports above must come first so Account/Position (used
-# only by trading.py) are registered on Base.metadata before this runs —
-# otherwise those tables would silently never get created.
+# All router imports above must come first so Account/Position/SpotWallet/
+# SpotHolding/SpotOrder (used only by trading.py/spot.py) are registered
+# on Base.metadata before this runs — otherwise those tables would
+# silently never get created.
 Base.metadata.create_all(bind=engine)
 
 app = Flask(__name__)
 CORS(app, origins=[*CORS_ORIGINS, re.compile(CORS_ORIGIN_REGEX)], supports_credentials=True)
 app.register_blueprint(auth_bp)
 app.register_blueprint(trading_bp)
+app.register_blueprint(spot_bp)
 
 
 @app.errorhandler(ValidationError)

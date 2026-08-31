@@ -61,6 +61,60 @@ class Position(Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class SpotWallet(Base):
+    """One row per user — the demo Spot wallet balance, denominated in
+    IDR to match kTradingPairs' quote currency for crypto (see that
+    file's comment on IDR-quoted spot vs USDT-quoted futures). For
+    simplicity, non-IDR pairs (forex majors, gold) are bought/sold
+    against this same balance at their displayed price at face value —
+    a real multi-currency exchange would need a separate book per quote
+    currency; this single-book demo doesn't.
+    """
+    __tablename__ = "spot_wallets"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+    idr_balance: Mapped[float] = mapped_column(Float, default=50_000_000.0)
+
+
+class SpotHolding(Base):
+    """One row per (user, asset) the user currently holds a nonzero
+    quantity of — e.g. 0.05 BTC. Left at 0 rather than deleted once
+    fully sold, which is harmless (list_holdings filters quantity > 0)
+    and avoids a delete-then-recreate dance if the same asset is bought
+    again later.
+    """
+    __tablename__ = "spot_holdings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+    asset_id: Mapped[str] = mapped_column(String, nullable=False)  # 'BTC', 'ETH', 'EUR', ...
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+class SpotOrder(Base):
+    """A spot buy/sell order. Market orders fill immediately against the
+    client-supplied price — same "trust the client's price" caveat as
+    Futures' ClosePositionRequest.realized_pnl (see Account's docstring
+    above), acceptable only because this demo has no real market-data
+    feed of its own to verify against. Limit/stop-limit orders are just
+    recorded as 'open' and never auto-fill — there's no real order book/
+    matching engine behind this demo, so cancelling is the only thing
+    that ever changes their status (matching what the old UI-only mock
+    already did before this model existed).
+    """
+    __tablename__ = "spot_orders"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+    asset_id: Mapped[str] = mapped_column(String, nullable=False)
+    side: Mapped[str] = mapped_column(String, nullable=False)  # 'buy' | 'sell'
+    order_type: Mapped[str] = mapped_column(String, nullable=False)  # 'limit' | 'market' | 'stop_limit'
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="open")  # 'open' | 'filled' | 'cancelled'
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class PasswordReset(Base):
     """A one-time password-reset token. IMPORTANT demo compromise: this
     app has no outbound email service configured (PythonAnywhere's free

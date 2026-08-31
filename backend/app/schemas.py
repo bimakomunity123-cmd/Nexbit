@@ -71,6 +71,45 @@ class ClosePositionRequest(BaseModel):
     realized_pnl: float
 
 
+class SpotWalletOut(BaseModel):
+    idr_balance: float
+
+    class Config:
+        from_attributes = True
+
+
+class SpotHoldingOut(BaseModel):
+    asset_id: str
+    quantity: float
+
+    class Config:
+        from_attributes = True
+
+
+class SpotOrderOut(BaseModel):
+    id: str
+    asset_id: str
+    side: str
+    order_type: str
+    price: float
+    amount: float
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CreateSpotOrderRequest(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=10)
+    side: Literal["buy", "sell"]
+    order_type: Literal["limit", "market", "stop_limit"]
+    # Client-supplied — see SpotOrder's docstring in models.py for why
+    # that's an accepted demo-only limitation.
+    price: float = Field(gt=0)
+    amount: float = Field(gt=0)
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str = Field(min_length=8, max_length=72)
