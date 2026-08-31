@@ -13,6 +13,10 @@ enum MarginMode { cross, isolated }
 /// illustrative model (no funding-fee accrual, no shared cross-margin
 /// pool across positions) — good enough for a demo, not a real risk engine.
 class FuturesPosition {
+  /// Backend row id (see backend/app/models.py's Position) once this
+  /// position has been persisted for a logged-in user — null for the
+  /// guest-mode seeded demo position, which never touches the backend.
+  final String? id;
   final FuturesContract contract;
   final OrderSide side;
   final double size; // in base asset, e.g. BTC
@@ -21,6 +25,7 @@ class FuturesPosition {
   final MarginMode marginMode;
 
   FuturesPosition({
+    this.id,
     required this.contract,
     required this.side,
     required this.size,
@@ -52,13 +57,4 @@ class FuturesPosition {
   }
 
   double get liqPrice => liqPriceFor();
-}
-
-/// A single seeded starting position so the Positions tab isn't empty on
-/// first load, matching the reference dashboard.
-List<FuturesPosition> seedFuturesPositions() {
-  final btc = kFuturesCryptoContracts.first;
-  return [
-    FuturesPosition(contract: btc, side: OrderSide.long, size: 0.05, entryPrice: 111200, leverage: 10),
-  ];
 }

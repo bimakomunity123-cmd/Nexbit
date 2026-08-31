@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
+import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
 import '../../../../core/market_data/live_price_service.dart';
@@ -41,24 +43,80 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   FuturesAssetClass _assetClass = FuturesAssetClass.crypto;
   String _search = '';
   FuturesContract _selected = kFuturesCryptoContracts.first;
-  late List<FuturesPosition> _positions = seedFuturesPositions();
-  double _realizedPnl = 0;
 
-  // Kept in sync with FuturesAccountInfoCard's own calc (same starting
-  // balance, same formula) so the order form's %-of-buying-power buttons
-  // are sized against the same number the Account Info card shows.
-  static const _startingBalance = 1250.0;
+  // Guests see a seeded demo position (local-only, never touches the
+  // backend); a logged-in user's real positions/balance are fetched from
+  // the backend in initState instead — see _loadAccountData.
+  late List<FuturesPosition> _positions = isLoggedIn.value ? [] : _seedGuestPosition();
+  double _realizedPnl = 0;
+  double _balance = 1250.0;
+
+  // Entry price is a small offset below whatever BTC's current price
+  // is (live if LivePriceService has already fetched, the static mock
+  // otherwise) so the demo position shows a modest unrealized profit
+  // regardless of how far real BTC has since moved from the old fixed
+  // 111200 this used to hardcode — that number only made sense back
+  // when this page had no live price feed at all.
+  List<FuturesPosition> _seedGuestPosition() {
+    final btc = withLiveContractPrice(kFuturesCryptoContracts.first);
+    return [
+      FuturesPosition(contract: btc, side: OrderSide.long, size: 0.05, entryPrice: btc.price * 0.996, leverage: 10),
+    ];
+  }
 
   @override
   void initState() {
     super.initState();
     LivePriceService.prices.addListener(_onLiveUpdate);
+    if (isLoggedIn.value) _loadAccountData();
   }
 
   @override
   void dispose() {
     LivePriceService.prices.removeListener(_onLiveUpdate);
     super.dispose();
+  }
+
+  // Loads the logged-in user's real balance/positions from the backend.
+  // Left as the guest-mode empty state on any failure (offline, backend
+  // down) rather than showing an error — the page still works fine for
+  // browsing/pricing even without this succeeding.
+  Future<void> _loadAccountData() async {
+    try {
+      final token = authToken.value;
+      final results = await Future.wait([
+        ApiClient.getAccount(token),
+        ApiClient.getPositions(token),
+      ]);
+      final account = results[0] as Map<String, dynamic>;
+      final positionsJson = results[1] as List<dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _balance = (account['balance'] as num).toDouble();
+        _realizedPnl = (account['realized_pnl'] as num).toDouble();
+        _positions = positionsJson.map((j) => _positionFromJson(j as Map<String, dynamic>)).toList();
+      });
+    } catch (_) {
+      // Stays on the empty-but-logged-in state set in the field
+      // initializer above — no seeded fake position is shown to a real
+      // account even if the fetch fails.
+    }
+  }
+
+  FuturesPosition _positionFromJson(Map<String, dynamic> json) {
+    final contract = kAllFuturesContracts.firstWhere(
+      (c) => c.id == json['contract_id'],
+      orElse: () => kFuturesCryptoContracts.first,
+    );
+    return FuturesPosition(
+      id: json['id'] as String,
+      contract: contract,
+      side: json['side'] == 'short' ? OrderSide.short : OrderSide.long,
+      size: (json['size'] as num).toDouble(),
+      entryPrice: (json['entry_price'] as num).toDouble(),
+      leverage: (json['leverage'] as num).toInt(),
+      marginMode: json['margin_mode'] == 'cross' ? MarginMode.cross : MarginMode.isolated,
+    );
   }
 
   // Just triggers a rebuild — build() itself re-derives the live-priced
@@ -75,22 +133,64 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   double get _availableBalance {
     final usedMargin = _positions.fold(0.0, (sum, p) => sum + p.margin);
     final unrealizedPnl = _positions.fold(0.0, (sum, p) => sum + p.pnl(_markPriceOf(p.contract.id)));
-    final marginBalance = _startingBalance + _realizedPnl + unrealizedPnl;
+    final marginBalance = _balance + _realizedPnl + unrealizedPnl;
     return marginBalance - usedMargin;
   }
 
-  void _closePosition(FuturesPosition p) {
-    setState(() {
-      _realizedPnl += p.pnl(_markPriceOf(p.contract.id));
-      _positions = _positions.where((e) => e != p).toList();
-    });
+  Future<void> _closePosition(FuturesPosition p) async {
+    final pnl = p.pnl(_markPriceOf(p.contract.id));
+
+    // Only a backend-persisted position (id != null) needs a server
+    // round-trip — the guest-mode seeded position closes purely locally,
+    // same as before this page had a backend at all.
+    if (p.id != null) {
+      try {
+        final account = await ApiClient.closePosition(authToken.value, p.id!, pnl);
+        if (!mounted) return;
+        setState(() {
+          _realizedPnl = (account['realized_pnl'] as num).toDouble();
+          _positions = _positions.where((e) => e != p).toList();
+        });
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
+        return;
+      }
+    } else {
+      setState(() {
+        _realizedPnl += pnl;
+        _positions = _positions.where((e) => e != p).toList();
+      });
+    }
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(S.futuresPositionClosedSnack), duration: const Duration(seconds: 2)),
     );
   }
 
-  void _openPosition(FuturesPosition p) {
-    setState(() => _positions = [..._positions, p]);
+  // FuturesOrderFormPanel only ever calls this once the user is actually
+  // logged in (it gates submission on isLoggedIn itself), so this can
+  // unconditionally hit the backend rather than branching on guest mode.
+  Future<void> _openPosition(FuturesPosition p) async {
+    try {
+      final json = await ApiClient.openPosition(authToken.value, {
+        'contract_id': p.contract.id,
+        'side': p.side == OrderSide.short ? 'short' : 'long',
+        'size': p.size,
+        'entry_price': p.entryPrice,
+        'leverage': p.leverage,
+        'margin_mode': p.marginMode == MarginMode.cross ? 'cross' : 'isolated',
+      });
+      if (!mounted) return;
+      setState(() => _positions = [..._positions, _positionFromJson(json)]);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(S.futuresOrderPlacedSnack), duration: const Duration(seconds: 2)),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
+    }
   }
 
   void _selectAssetClass(FuturesAssetClass assetClass) {
@@ -396,7 +496,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
         FuturesAccountInfoCard(
           positions: _positions,
           markPriceOf: _markPriceOf,
-          startingBalance: _startingBalance,
+          startingBalance: _balance,
           realizedPnl: _realizedPnl,
         ),
         const SizedBox(height: 16),

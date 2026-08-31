@@ -22,59 +22,77 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Thin wrapper around the auth endpoints in backend/app/routers/auth.py.
-/// Deliberately minimal — no retry/backoff/interceptor machinery, this
-/// app doesn't need it yet.
+/// Thin wrapper around backend/app/routers/{auth,trading}.py. Deliberately
+/// minimal — no retry/backoff/interceptor machinery, this app doesn't
+/// need it yet.
 class ApiClient {
   ApiClient._();
 
   static Uri _uri(String path) => Uri.parse('$kApiBaseUrl$path');
 
-  static Map<String, String> get _jsonHeaders => const {'Content-Type': 'application/json'};
+  static Map<String, String> _headers({String? token}) => {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
 
-  static Future<Map<String, dynamic>> _post(String path, Map<String, dynamic> body, {String? token}) async {
+  /// Decodes a response body that's expected to be either a JSON object
+  /// or array, throwing [ApiException] for any non-2xx status (reading
+  /// the `{"detail": ...}` shape Flask's error handlers always send) or
+  /// for a request that never reached the server at all (offline,
+  /// backend down, CORS-blocked).
+  static Future<dynamic> _send(Future<http.Response> Function() request) async {
     http.Response res;
     try {
-      res = await http.post(
-        _uri(path),
-        headers: {
-          ..._jsonHeaders,
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(body),
-      );
+      res = await request();
     } catch (_) {
-      // Covers connection refused / DNS failure / CORS-blocked — the
-      // backend not running or not reachable from wherever this is
-      // loaded, which is the common case until it's actually deployed.
       throw ApiException(0, 'Tidak bisa terhubung ke server. Pastikan backend berjalan.');
     }
 
-    final decoded = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
+    final dynamic decoded = res.body.isEmpty ? null : jsonDecode(res.body);
     if (res.statusCode >= 200 && res.statusCode < 300) return decoded;
 
-    final detail = decoded['detail'];
+    final detail = decoded is Map<String, dynamic> ? decoded['detail'] : null;
     throw ApiException(res.statusCode, detail is String ? detail : 'Terjadi kesalahan (${res.statusCode})');
   }
 
+  static Future<Map<String, dynamic>> _postJson(String path, Map<String, dynamic> body, {String? token}) async {
+    final decoded = await _send(() => http.post(_uri(path), headers: _headers(token: token), body: jsonEncode(body)));
+    return decoded as Map<String, dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> _getJson(String path, {String? token}) async {
+    final decoded = await _send(() => http.get(_uri(path), headers: _headers(token: token)));
+    return decoded as Map<String, dynamic>;
+  }
+
+  static Future<List<dynamic>> _getList(String path, {String? token}) async {
+    final decoded = await _send(() => http.get(_uri(path), headers: _headers(token: token)));
+    return decoded as List<dynamic>;
+  }
+
+  // ---- Auth ----
+
   static Future<Map<String, dynamic>> register({required String name, required String email, required String password}) {
-    return _post('/auth/register', {'name': name, 'email': email, 'password': password});
+    return _postJson('/auth/register', {'name': name, 'email': email, 'password': password});
   }
 
   static Future<Map<String, dynamic>> login({required String email, required String password}) {
-    return _post('/auth/login', {'email': email, 'password': password});
+    return _postJson('/auth/login', {'email': email, 'password': password});
   }
 
-  static Future<Map<String, dynamic>> me(String token) async {
-    http.Response res;
-    try {
-      res = await http.get(_uri('/auth/me'), headers: {'Authorization': 'Bearer $token'});
-    } catch (_) {
-      throw ApiException(0, 'Tidak bisa terhubung ke server.');
-    }
-    final decoded = res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode >= 200 && res.statusCode < 300) return decoded;
-    final detail = decoded['detail'];
-    throw ApiException(res.statusCode, detail is String ? detail : 'Sesi tidak valid');
+  static Future<Map<String, dynamic>> me(String token) => _getJson('/auth/me', token: token);
+
+  // ---- Trading (Futures balance/positions) ----
+
+  static Future<Map<String, dynamic>> getAccount(String token) => _getJson('/trading/account', token: token);
+
+  static Future<List<dynamic>> getPositions(String token) => _getList('/trading/positions', token: token);
+
+  static Future<Map<String, dynamic>> openPosition(String token, Map<String, dynamic> body) {
+    return _postJson('/trading/positions', body, token: token);
+  }
+
+  static Future<Map<String, dynamic>> closePosition(String token, String positionId, double realizedPnl) {
+    return _postJson('/trading/positions/$positionId/close', {'realized_pnl': realizedPnl}, token: token);
   }
 }
