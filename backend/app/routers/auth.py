@@ -1,23 +1,12 @@
 from flask import Blueprint, jsonify, request
 
+from ..auth_helpers import current_user
 from ..database import SessionLocal
-from ..models import User
+from ..models import Account, User
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
-from ..security import create_access_token, decode_access_token, hash_password, verify_password
+from ..security import create_access_token, hash_password, verify_password
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
-
-
-def _current_user(db):
-    """Reads the Bearer token from the request and resolves it to a User,
-    or None if missing/invalid/expired — callers turn that into a 401."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-    user_id = decode_access_token(auth_header.removeprefix("Bearer ").strip())
-    if user_id is None:
-        return None
-    return db.get(User, user_id)
 
 
 @auth_bp.post("/register")
@@ -31,6 +20,10 @@ def register():
 
         user = User(name=body.name.strip(), email=body.email.lower(), password_hash=hash_password(body.password))
         db.add(user)
+        db.flush()  # assigns user.id before the Account row references it
+        # Every new account starts with the same demo balance the old
+        # local-only mock used (see futures_page's former _startingBalance).
+        db.add(Account(user_id=user.id))
         db.commit()
         db.refresh(user)
 
@@ -61,7 +54,7 @@ def login():
 def me():
     db = SessionLocal()
     try:
-        user = _current_user(db)
+        user = current_user(db)
         if user is None:
             return jsonify({"detail": "Missing or invalid bearer token"}), 401
         return jsonify(UserOut.model_validate(user).model_dump(mode="json"))
