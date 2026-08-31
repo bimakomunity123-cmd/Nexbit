@@ -4,7 +4,7 @@ balances/positions live here instead of in-memory Flutter state.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -59,3 +59,22 @@ class Position(Base):
     leverage: Mapped[int] = mapped_column(Integer, nullable=False)
     margin_mode: Mapped[str] = mapped_column(String, default="isolated")
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PasswordReset(Base):
+    """A one-time password-reset token. IMPORTANT demo compromise: this
+    app has no outbound email service configured (PythonAnywhere's free
+    tier restricts most outbound SMTP anyway), so /auth/forgot-password
+    returns this token directly in its JSON response instead of emailing
+    it — clearly labeled as a demo limitation in the Flutter UI. A real
+    implementation must NEVER do this: the token must only ever reach the
+    user through a verified out-of-band channel (email), and the forgot-
+    password endpoint must respond identically whether or not the email
+    exists, so it can't be used to enumerate registered accounts.
+    """
+    __tablename__ = "password_resets"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)

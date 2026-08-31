@@ -69,3 +69,21 @@ class ClosePositionRequest(BaseModel):
     # Fine for this demo's mock trading; a real ledger would never trust
     # a client-supplied PnL figure.
     realized_pnl: float
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=8, max_length=72)
+
+
+class UpdateProfileRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=72)
