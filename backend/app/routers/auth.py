@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import Account, PasswordReset, User
+from ..rate_limit import limiter
 from ..schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -24,6 +25,7 @@ _RESET_TOKEN_LIFETIME = timedelta(hours=1)
 
 
 @auth_bp.post("/register")
+@limiter.limit("10 per hour")
 def register():
     body = RegisterRequest.model_validate(request.get_json(force=True, silent=False) or {})
     db = SessionLocal()
@@ -48,6 +50,11 @@ def register():
 
 
 @auth_bp.post("/login")
+# Tighter than most limits here on purpose — login is the classic
+# brute-force target. Keyed by IP (see rate_limit.py), not by the
+# submitted email, since keying by attacker-controlled input would let
+# someone dodge the limit just by trying a different email each time.
+@limiter.limit("15 per 5 minutes")
 def login():
     body = LoginRequest.model_validate(request.get_json(force=True, silent=False) or {})
     db = SessionLocal()
@@ -77,6 +84,7 @@ def me():
 
 
 @auth_bp.post("/change-password")
+@limiter.limit("20 per hour")
 def change_password():
     db = SessionLocal()
     try:
@@ -113,6 +121,11 @@ def update_profile():
 
 
 @auth_bp.post("/forgot-password")
+# Also protects against using this endpoint to enumerate accounts by
+# volume (see its docstring) — even though the response is identical
+# either way, an attacker able to fire unlimited requests could still
+# time or otherwise side-channel the reset_token's presence.
+@limiter.limit("10 per hour")
 def forgot_password():
     """Always responds 200 with the same shape whether or not the email
     is registered — so this can't be used to enumerate accounts. The
@@ -144,6 +157,9 @@ def forgot_password():
 
 
 @auth_bp.post("/reset-password")
+# Limits brute-forcing the reset token itself (a 32-char hex string is
+# infeasible to guess even unlimited, but this costs nothing to add).
+@limiter.limit("20 per hour")
 def reset_password():
     body = ResetPasswordRequest.model_validate(request.get_json(force=True, silent=False) or {})
     db = SessionLocal()

@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import SpotHolding, SpotOrder, SpotWallet
+from ..rate_limit import limiter
 from ..schemas import CreateSpotOrderRequest, SpotHoldingOut, SpotOrderOut, SpotWalletOut
 
 spot_bp = Blueprint("spot", __name__, url_prefix="/spot")
@@ -82,6 +83,10 @@ def list_orders():
 
 
 @spot_bp.post("/orders")
+# Guards against a runaway client (or a script) hammering order
+# creation — generous enough not to bother a real user clicking Beli/
+# Jual repeatedly, tight enough to blunt spam.
+@limiter.limit("60 per minute")
 def create_order():
     db = SessionLocal()
     try:
@@ -134,6 +139,7 @@ def create_order():
 
 
 @spot_bp.post("/orders/<order_id>/cancel")
+@limiter.limit("60 per minute")
 def cancel_order(order_id: str):
     db = SessionLocal()
     try:

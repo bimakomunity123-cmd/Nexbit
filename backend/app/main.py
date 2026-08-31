@@ -2,11 +2,13 @@ import re
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask_limiter.errors import RateLimitExceeded
 from pydantic import ValidationError
 from werkzeug.exceptions import HTTPException
 
 from .config import CORS_ORIGIN_REGEX, CORS_ORIGINS
 from .database import Base, engine
+from .rate_limit import limiter
 from .routers.auth import auth_bp
 from .routers.spot import spot_bp
 from .routers.trading import trading_bp
@@ -22,6 +24,7 @@ Base.metadata.create_all(bind=engine)
 
 app = Flask(__name__)
 CORS(app, origins=[*CORS_ORIGINS, re.compile(CORS_ORIGIN_REGEX)], supports_credentials=True)
+limiter.init_app(app)
 app.register_blueprint(auth_bp)
 app.register_blueprint(trading_bp)
 app.register_blueprint(spot_bp)
@@ -33,6 +36,15 @@ def handle_validation_error(err: ValidationError):
     # error handling doesn't need to know which backend framework is
     # behind it.
     return jsonify({"detail": err.errors()}), 422
+
+
+@app.errorhandler(RateLimitExceeded)
+def handle_rate_limit_exceeded(err: RateLimitExceeded):
+    # Registered ahead of the generic HTTPException handler below (Flask
+    # dispatches to the most specific matching handler) so this gets a
+    # readable Indonesian message instead of Flask-Limiter's default
+    # "4 per 1 minute" description.
+    return jsonify({"detail": "Terlalu banyak percobaan. Coba lagi beberapa saat lagi."}), 429
 
 
 @app.errorhandler(HTTPException)

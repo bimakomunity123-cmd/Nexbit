@@ -55,10 +55,16 @@ class PositionOut(BaseModel):
 
 
 class OpenPositionRequest(BaseModel):
-    contract_id: str = Field(min_length=1, max_length=20)
+    # Letters/digits only — not because contract ids need to be validated
+    # against the real list (this demo doesn't maintain one server-side),
+    # but so obviously-garbage input can't reach the database at all.
+    contract_id: str = Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9]+$")
     side: Literal["long", "short"]
-    size: float = Field(gt=0)
-    entry_price: float = Field(gt=0)
+    # Upper bounds are generous (way past any realistic order) — just
+    # enough to reject absurd/overflow-shaped numbers, not to model a
+    # real exchange's actual size limits.
+    size: float = Field(gt=0, le=1_000_000)
+    entry_price: float = Field(gt=0, le=1_000_000_000)
     leverage: int = Field(ge=1, le=125)
     margin_mode: Literal["cross", "isolated"] = "isolated"
 
@@ -67,8 +73,9 @@ class ClosePositionRequest(BaseModel):
     # Client-computed — the backend has no live market-data feed of its
     # own to verify this against (see Account's docstring in models.py).
     # Fine for this demo's mock trading; a real ledger would never trust
-    # a client-supplied PnL figure.
-    realized_pnl: float
+    # a client-supplied PnL figure. Bounded to a generous-but-finite
+    # range for the same reason as OpenPositionRequest's fields above.
+    realized_pnl: float = Field(ge=-1_000_000_000, le=1_000_000_000)
 
 
 class SpotWalletOut(BaseModel):
@@ -101,13 +108,15 @@ class SpotOrderOut(BaseModel):
 
 
 class CreateSpotOrderRequest(BaseModel):
-    asset_id: str = Field(min_length=1, max_length=10)
+    asset_id: str = Field(min_length=1, max_length=10, pattern=r"^[A-Za-z0-9]+$")
     side: Literal["buy", "sell"]
     order_type: Literal["limit", "market", "stop_limit"]
     # Client-supplied — see SpotOrder's docstring in models.py for why
-    # that's an accepted demo-only limitation.
-    price: float = Field(gt=0)
-    amount: float = Field(gt=0)
+    # that's an accepted demo-only limitation. Bounds are generous (IDR
+    # prices run into the billions for BTC) — just enough to reject
+    # absurd/overflow-shaped numbers, not to model real price limits.
+    price: float = Field(gt=0, le=100_000_000_000)
+    amount: float = Field(gt=0, le=1_000_000)
 
 
 class ChangePasswordRequest(BaseModel):

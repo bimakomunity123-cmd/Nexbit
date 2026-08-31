@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import Account, Position
+from ..rate_limit import limiter
 from ..schemas import AccountOut, ClosePositionRequest, OpenPositionRequest, PositionOut
 
 trading_bp = Blueprint("trading", __name__, url_prefix="/trading")
@@ -47,6 +48,7 @@ def list_positions():
 
 
 @trading_bp.post("/positions")
+@limiter.limit("60 per minute")
 def open_position():
     db = SessionLocal()
     try:
@@ -73,6 +75,7 @@ def open_position():
 
 
 @trading_bp.post("/positions/<position_id>/close")
+@limiter.limit("60 per minute")
 def close_position(position_id: str):
     db = SessionLocal()
     try:
