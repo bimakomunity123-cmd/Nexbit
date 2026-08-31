@@ -188,6 +188,60 @@ class AccountToggleRow extends StatelessWidget {
   }
 }
 
+/// The dark, rounded text field used inside the small confirm/cancel
+/// dialogs across the account pages (change password, edit display name,
+/// reset password) — shared so those dialogs don't each redefine the same
+/// decoration.
+class AccountDialogField extends StatelessWidget {
+  final String hint;
+  final TextEditingController controller;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  const AccountDialogField({
+    super.key,
+    required this.hint,
+    required this.controller,
+    this.obscureText = false,
+    this.keyboardType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      style: NexbitText.body(fontSize: 13.5, color: NexbitColors.text),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted2),
+        filled: true,
+        fillColor: NexbitColors.surface2,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexbitColors.line)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexbitColors.line)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexbitColors.accent)),
+      ),
+    );
+  }
+}
+
+/// Small inline error line shown inside an account-page dialog, under its
+/// input fields — used by change-password/edit-name for backend/validation
+/// errors.
+class AccountDialogError extends StatelessWidget {
+  final String message;
+  const AccountDialogError(this.message, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Text(message, style: NexbitText.body(fontSize: 12.5, color: NexbitColors.down)),
+    );
+  }
+}
+
 /// A thin horizontal divider matching the section-card borders — used
 /// between rows inside a card instead of extra vertical padding alone.
 class AccountRowDivider extends StatelessWidget {

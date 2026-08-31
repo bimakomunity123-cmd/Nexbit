@@ -382,6 +382,38 @@ class S {
       );
   static String get forgotPasswordResend => _t('Belum menerima email? Kirim ulang', "Didn't get the email? Resend");
   static String get forgotPasswordResentSnack => _t('Link reset dikirim ulang', 'Reset link resent');
+  static String get forgotPasswordDemoNoticeHeading => _t('Mode Demo', 'Demo Mode');
+  static String get forgotPasswordDemoNoticeBody => _t(
+        'Aplikasi ini belum punya layanan email sungguhan, jadi kode reset ditampilkan langsung di sini alih-alih dikirim ke email kamu.',
+        "This app doesn't have a real email service yet, so the reset code is shown here directly instead of being emailed to you.",
+      );
+  static String get forgotPasswordContinueReset => _t('Lanjutkan Reset Password', 'Continue to Reset Password');
+  static String get forgotPasswordManualCodeLink =>
+      _t('Sudah punya kode reset? Masukkan manual', 'Already have a reset code? Enter it manually');
+
+  // ---------------------------------------------------------------------
+  // Reset password (continuation of the forgot-password flow above)
+  // ---------------------------------------------------------------------
+  static String get resetPasswordHeading => _t('Buat Password Baru', 'Create New Password');
+  static String get resetPasswordSubtitle => _t(
+        'Masukkan kode reset dan password baru untuk akunmu.',
+        'Enter your reset code and a new password for your account.',
+      );
+  static String get resetPasswordTokenLabel => _t('Kode Reset', 'Reset Code');
+  static String get resetPasswordPrefilledNotice =>
+      _t('Kode reset otomatis diisi (mode demo)', 'Reset code auto-filled (demo mode)');
+  static String get resetPasswordNewPassword => _t('Password Baru', 'New Password');
+  static String get resetPasswordConfirmPassword => _t('Konfirmasi Password Baru', 'Confirm New Password');
+  static String get resetPasswordSubmit => _t('Reset Password', 'Reset Password');
+  static String get resetPasswordFieldsRequired => _t('Semua kolom wajib diisi', 'All fields are required');
+  static String get resetPasswordTooShort =>
+      _t('Password baru minimal 8 karakter', 'New password must be at least 8 characters');
+  static String get resetPasswordMismatch => _t('Konfirmasi password tidak cocok', "Passwords don't match");
+  static String get resetPasswordSuccessHeading => _t('Password Berhasil Direset', 'Password Reset Successful');
+  static String get resetPasswordSuccessBody => _t(
+        'Password akunmu sudah diperbarui. Silakan masuk dengan password barumu.',
+        'Your account password has been updated. Please log in with your new password.',
+      );
 
   // ---------------------------------------------------------------------
   // Register page
@@ -754,6 +786,8 @@ class S {
   static String get profileSettingsHeading => _t('Pengaturan Profil', 'Profile Settings');
   static String get profilePhoto => _t('Foto Profil', 'Profile Photo');
   static String get profileDisplayName => _t('Nama Tampilan', 'Display Name');
+  static String get profileDisplayNameRequired => _t('Nama tidak boleh kosong', 'Name cannot be empty');
+  static String get profileDisplayNameUpdatedSnack => _t('Nama tampilan berhasil diubah', 'Display name updated');
   static String get profileLanguageLabel => _t('Bahasa', 'Language');
   static String get profileDangerZoneHeading => _t('Zona Bahaya', 'Danger Zone');
   static String get profileLogoutAllDevices => _t('Logout semua perangkat', 'Log out of all devices');
@@ -808,6 +842,10 @@ class S {
   static String get securityNewPassword => _t('Password Baru', 'New Password');
   static String get securityConfirmNewPassword => _t('Konfirmasi Password Baru', 'Confirm New Password');
   static String get securityPasswordChangedSnack => _t('Password berhasil diubah', 'Password changed successfully');
+  static String get securityPasswordFieldsRequired => _t('Semua kolom wajib diisi', 'All fields are required');
+  static String get securityPasswordTooShort =>
+      _t('Password baru minimal 8 karakter', 'New password must be at least 8 characters');
+  static String get securityPasswordMismatch => _t('Konfirmasi password tidak cocok', "Passwords don't match");
 
   // Preferensi
   static String get preferencesHeading => _t('Preferensi', 'Preferences');

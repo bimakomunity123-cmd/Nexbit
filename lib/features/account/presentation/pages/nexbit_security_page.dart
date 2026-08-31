@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
+import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
 import '../../../../core/prefs/app_prefs.dart';
@@ -42,56 +44,83 @@ class _NexbitSecurityPageState extends State<NexbitSecurityPage> {
     final oldCtrl = TextEditingController();
     final newCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
+    bool loading = false;
+    String? error;
+
+    Future<void> submit(StateSetter setDialogState, BuildContext dialogContext) async {
+      final oldPw = oldCtrl.text;
+      final newPw = newCtrl.text;
+      final confirmPw = confirmCtrl.text;
+      if (oldPw.isEmpty || newPw.isEmpty || confirmPw.isEmpty) {
+        setDialogState(() => error = S.securityPasswordFieldsRequired);
+        return;
+      }
+      if (newPw.length < 8) {
+        setDialogState(() => error = S.securityPasswordTooShort);
+        return;
+      }
+      if (newPw != confirmPw) {
+        setDialogState(() => error = S.securityPasswordMismatch);
+        return;
+      }
+      setDialogState(() {
+        loading = true;
+        error = null;
+      });
+      try {
+        // Real backend call (see backend/app/routers/auth.py's
+        // /auth/change-password) — a wrong old password now actually
+        // gets rejected instead of always "succeeding".
+        await ApiClient.changePassword(authToken.value, oldPassword: oldPw, newPassword: newPw);
+        if (!dialogContext.mounted) return;
+        Navigator.of(dialogContext).pop();
+        _snack(S.securityPasswordChangedSnack);
+      } on ApiException catch (e) {
+        setDialogState(() {
+          loading = false;
+          error = e.message;
+        });
+      }
+    }
+
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: NexbitColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: NexbitColors.line)),
-        title: Text(S.securityChangePasswordTitle, style: NexbitText.body(fontSize: 16, weight: FontWeight.w700, color: NexbitColors.text)),
-        content: SizedBox(
-          width: 320,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _dialogField(S.securityOldPassword, oldCtrl),
-              const SizedBox(height: 12),
-              _dialogField(S.securityNewPassword, newCtrl),
-              const SizedBox(height: 12),
-              _dialogField(S.securityConfirmNewPassword, confirmCtrl),
-            ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: NexbitColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: NexbitColors.line)),
+          title: Text(S.securityChangePasswordTitle, style: NexbitText.body(fontSize: 16, weight: FontWeight.w700, color: NexbitColors.text)),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AccountDialogField(hint: S.securityOldPassword, controller: oldCtrl, obscureText: true),
+                const SizedBox(height: 12),
+                AccountDialogField(hint: S.securityNewPassword, controller: newCtrl, obscureText: true),
+                const SizedBox(height: 12),
+                AccountDialogField(hint: S.securityConfirmNewPassword, controller: confirmCtrl, obscureText: true),
+                if (error != null) AccountDialogError(error!),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: loading ? null : () => Navigator.of(dialogContext).pop(),
+              child: Text(S.accountCancel, style: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted)),
+            ),
+            TextButton(
+              onPressed: loading ? null : () => submit(setDialogState, dialogContext),
+              child: loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: NexbitColors.accent),
+                    )
+                  : Text(S.accountConfirm, style: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700, color: NexbitColors.accent)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(S.accountCancel, style: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _snack(S.securityPasswordChangedSnack);
-            },
-            child: Text(S.accountConfirm, style: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700, color: NexbitColors.accent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dialogField(String hint, TextEditingController controller) {
-    return TextField(
-      controller: controller,
-      obscureText: true,
-      style: NexbitText.body(fontSize: 13.5, color: NexbitColors.text),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted2),
-        filled: true,
-        fillColor: NexbitColors.surface2,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexbitColors.line)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexbitColors.line)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9), borderSide: const BorderSide(color: NexbitColors.accent)),
       ),
     );
   }

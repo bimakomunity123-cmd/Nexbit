@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
 import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
@@ -78,7 +79,7 @@ class NexbitProfilePage extends StatelessWidget {
                         icon: Icons.drive_file_rename_outline,
                         label: S.profileDisplayName,
                         trailing: TextButton(
-                          onPressed: () => _snack(context, S.accountComingSoonSnack),
+                          onPressed: () => _editDisplayName(context, displayName),
                           child: Text(S.securityChangeButton, style: NexbitText.body(fontSize: 13, weight: FontWeight.w600, color: NexbitColors.accent)),
                         ),
                       ),
@@ -149,6 +150,76 @@ class NexbitProfilePage extends StatelessWidget {
 
   void _snack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+  }
+
+  void _editDisplayName(BuildContext context, String currentName) {
+    final nameCtrl = TextEditingController(text: currentName);
+    bool loading = false;
+    String? error;
+
+    Future<void> submit(StateSetter setDialogState, BuildContext dialogContext) async {
+      final name = nameCtrl.text.trim();
+      if (name.isEmpty) {
+        setDialogState(() => error = S.profileDisplayNameRequired);
+        return;
+      }
+      setDialogState(() {
+        loading = true;
+        error = null;
+      });
+      try {
+        // Real backend call (see backend/app/routers/auth.py's PATCH
+        // /auth/profile) — persists the new name server-side, not just
+        // in this session's ValueNotifier.
+        final result = await ApiClient.updateProfile(authToken.value, name: name);
+        currentUserName.value = result['name'] as String;
+        if (!dialogContext.mounted) return;
+        Navigator.of(dialogContext).pop();
+        _snack(context, S.profileDisplayNameUpdatedSnack);
+      } on ApiException catch (e) {
+        setDialogState(() {
+          loading = false;
+          error = e.message;
+        });
+      }
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: NexbitColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: NexbitColors.line)),
+          title: Text(S.profileDisplayName, style: NexbitText.body(fontSize: 16, weight: FontWeight.w700, color: NexbitColors.text)),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AccountDialogField(hint: S.profileDisplayName, controller: nameCtrl),
+                if (error != null) AccountDialogError(error!),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: loading ? null : () => Navigator.of(dialogContext).pop(),
+              child: Text(S.accountCancel, style: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted)),
+            ),
+            TextButton(
+              onPressed: loading ? null : () => submit(setDialogState, dialogContext),
+              child: loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: NexbitColors.accent),
+                    )
+                  : Text(S.accountConfirm, style: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700, color: NexbitColors.accent)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirm(BuildContext context, {required String title, required String message, required VoidCallback onConfirm, bool danger = false}) {

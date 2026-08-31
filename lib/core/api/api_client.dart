@@ -60,6 +60,11 @@ class ApiClient {
     return decoded as Map<String, dynamic>;
   }
 
+  static Future<Map<String, dynamic>> _patchJson(String path, Map<String, dynamic> body, {String? token}) async {
+    final decoded = await _send(() => http.patch(_uri(path), headers: _headers(token: token), body: jsonEncode(body)));
+    return decoded as Map<String, dynamic>;
+  }
+
   static Future<Map<String, dynamic>> _getJson(String path, {String? token}) async {
     final decoded = await _send(() => http.get(_uri(path), headers: _headers(token: token)));
     return decoded as Map<String, dynamic>;
@@ -81,6 +86,22 @@ class ApiClient {
   }
 
   static Future<Map<String, dynamic>> me(String token) => _getJson('/auth/me', token: token);
+
+  static Future<Map<String, dynamic>> changePassword(String token, {required String oldPassword, required String newPassword}) {
+    return _postJson('/auth/change-password', {'old_password': oldPassword, 'new_password': newPassword}, token: token);
+  }
+
+  static Future<Map<String, dynamic>> updateProfile(String token, {required String name}) {
+    return _patchJson('/auth/profile', {'name': name}, token: token);
+  }
+
+  static Future<Map<String, dynamic>> forgotPassword(String email) {
+    return _postJson('/auth/forgot-password', {'email': email});
+  }
+
+  static Future<Map<String, dynamic>> resetPassword({required String token, required String newPassword}) {
+    return _postJson('/auth/reset-password', {'token': token, 'new_password': newPassword});
+  }
 
   // ---- Trading (Futures balance/positions) ----
 
