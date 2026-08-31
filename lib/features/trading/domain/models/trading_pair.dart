@@ -151,3 +151,12 @@ String formatPrice(double value, int decimals) {
   final result = decimals > 0 ? '${buf.toString()},${parts[1]}' : buf.toString();
   return isNeg ? '-$result' : result;
 }
+
+/// Reverses [formatPrice] — strips '.' thousands separators, then reads
+/// ',' as the decimal point — so text a price field pre-filled (or a
+/// user kept editing in the same convention) parses back into a double.
+/// Falls back to 0 for anything unparseable (an empty field, say).
+double parsePriceInput(String text) {
+  final cleaned = text.trim().replaceAll('.', '').replaceAll(',', '.');
+  return double.tryParse(cleaned) ?? 0;
+}

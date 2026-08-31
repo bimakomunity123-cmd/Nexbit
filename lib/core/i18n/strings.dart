@@ -322,6 +322,21 @@ class S {
   static String get formCurrentMarketPrice => _t('Harga Pasar Saat Ini', 'Current Market Price');
   static String buyAction(String id) => _t('Beli $id', 'Buy $id');
   static String sellAction(String id) => _t('Jual $id', 'Sell $id');
+  static String get tradingLoginRequiredSnack =>
+      _t('Masuk dulu untuk mulai trading', 'Log in first to start trading');
+  static String get tradingAmountRequired => _t('Jumlah wajib diisi', 'Amount is required');
+  static String get tradingOrderFilledSnack => _t('Order berhasil dieksekusi', 'Order executed successfully');
+  static String get tradingOrderPlacedSnack => _t('Order berhasil dipasang', 'Order placed successfully');
+
+  // ---------------------------------------------------------------------
+  // Trading page — spot wallet card
+  // ---------------------------------------------------------------------
+  static String get spotWalletHeading => _t('Dompet Spot', 'Spot Wallet');
+  static String get spotWalletBalance => _t('Saldo IDR', 'IDR Balance');
+  static String get spotWalletHoldingsHeading => _t('Aset Dimiliki', 'Holdings');
+  static String get spotWalletNoHoldings => _t('Belum ada aset', 'No holdings yet');
+  static String get spotWalletEstValue => _t('Est. nilai', 'Est. value');
+  static String get spotWalletPortfolioValue => _t('Total Nilai Portofolio', 'Total Portfolio Value');
 
   // ---------------------------------------------------------------------
   // Trading page — open orders / order history panel

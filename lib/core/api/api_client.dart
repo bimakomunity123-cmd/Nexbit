@@ -103,6 +103,18 @@ class ApiClient {
     return _postJson('/auth/reset-password', {'token': token, 'new_password': newPassword});
   }
 
+  // ---- Spot trading (Trading page buy/sell) ----
+
+  static Future<Map<String, dynamic>> getSpotWallet(String token) => _getJson('/spot/wallet', token: token);
+  static Future<List<dynamic>> getSpotHoldings(String token) => _getList('/spot/holdings', token: token);
+  static Future<List<dynamic>> getSpotOrders(String token) => _getList('/spot/orders', token: token);
+  static Future<Map<String, dynamic>> createSpotOrder(String token, Map<String, dynamic> body) {
+    return _postJson('/spot/orders', body, token: token);
+  }
+  static Future<Map<String, dynamic>> cancelSpotOrder(String token, String orderId) {
+    return _postJson('/spot/orders/$orderId/cancel', {}, token: token);
+  }
+
   // ---- Trading (Futures balance/positions) ----
 
   static Future<Map<String, dynamic>> getAccount(String token) => _getJson('/trading/account', token: token);

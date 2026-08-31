@@ -2,40 +2,18 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../../core/i18n/strings.dart';
 import '../../../../core/theme/nexbit_theme.dart';
+import '../../domain/models/spot_order.dart';
 import '../../domain/models/trading_pair.dart';
 
-enum _OrderStatus { open, filled, cancelled }
-
-class _MockOrder {
-  final String pair;
-  final OrderType type;
-  final bool isBuy;
-  final double price;
-  final double amount;
-  final int decimals;
-  final DateTime time;
-  _OrderStatus status;
-
-  _MockOrder({
-    required this.pair,
-    required this.type,
-    required this.isBuy,
-    required this.price,
-    required this.amount,
-    required this.decimals,
-    required this.time,
-    required this.status,
-  });
-
-  double get total => price * amount;
-}
-
 /// Fills the space below the order-entry form with a real "Open Orders /
-/// Order History" table — the panel every trading platform has there, so
-/// that area reads as finished rather than empty.
+/// Order History" table — backed by real backend orders for a logged-in
+/// user, or a deterministic per-pair mock list for guests (see
+/// NexbitTradingPage, which decides which one this gets and owns the
+/// cancel handler for either case).
 class OpenOrdersPanel extends StatefulWidget {
-  final TradingPair pair;
-  const OpenOrdersPanel({super.key, required this.pair});
+  final List<SpotOrder> orders;
+  final ValueChanged<SpotOrder> onCancel;
+  const OpenOrdersPanel({super.key, required this.orders, required this.onCancel});
 
   @override
   State<OpenOrdersPanel> createState() => _OpenOrdersPanelState();
@@ -43,64 +21,28 @@ class OpenOrdersPanel extends StatefulWidget {
 
 class _OpenOrdersPanelState extends State<OpenOrdersPanel> {
   bool _showHistory = false;
-  late List<_MockOrder> _orders = _seed(widget.pair);
-
-  static List<_MockOrder> _seed(TradingPair pair) {
-    final rng = Random(pair.id.hashCode);
-    final now = DateTime.now();
-    final types = OrderType.values;
-    // A generous count, split across both tabs, so this still fills
-    // tall/large monitors instead of running dry after just 1-2 rows and
-    // leaving empty (if correctly-coloured) space below.
-    return List.generate(22, (i) {
-      final isOpen = i < 8;
-      final priceJitter = 1 + (rng.nextDouble() - 0.5) * 0.01;
-      return _MockOrder(
-        pair: pair.label,
-        type: types[rng.nextInt(types.length)],
-        isBuy: rng.nextBool(),
-        price: pair.base * priceJitter,
-        amount: double.parse((rng.nextDouble() * 0.5 + 0.01).toStringAsFixed(pair.decimals >= 3 ? 3 : 5)),
-        decimals: pair.decimals,
-        time: now.subtract(Duration(minutes: i * 37 + 5)),
-        status: isOpen ? _OrderStatus.open : (rng.nextBool() ? _OrderStatus.filled : _OrderStatus.cancelled),
-      );
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant OpenOrdersPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.pair.id != widget.pair.id) setState(() => _orders = _seed(widget.pair));
-  }
-
-  void _cancel(_MockOrder o) {
-    setState(() => o.status = _OrderStatus.cancelled);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(S.orderCancelledSnack), duration: const Duration(seconds: 2)),
-    );
-  }
 
   String _time(DateTime t) =>
       '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')} '
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  String _statusLabel(_OrderStatus s) => switch (s) {
-        _OrderStatus.open => S.orderStatusOpen,
-        _OrderStatus.filled => S.orderStatusFilled,
-        _OrderStatus.cancelled => S.orderStatusCancelled,
+  String _statusLabel(SpotOrderStatus s) => switch (s) {
+        SpotOrderStatus.open => S.orderStatusOpen,
+        SpotOrderStatus.filled => S.orderStatusFilled,
+        SpotOrderStatus.cancelled => S.orderStatusCancelled,
       };
 
-  Color _statusColor(_OrderStatus s) => switch (s) {
-        _OrderStatus.open => NexbitColors.accent,
-        _OrderStatus.filled => NexbitColors.up,
-        _OrderStatus.cancelled => NexbitColors.muted2,
+  Color _statusColor(SpotOrderStatus s) => switch (s) {
+        SpotOrderStatus.open => NexbitColors.accent,
+        SpotOrderStatus.filled => NexbitColors.up,
+        SpotOrderStatus.cancelled => NexbitColors.muted2,
       };
 
   @override
   Widget build(BuildContext context) {
-    final visible =
-        _orders.where((o) => _showHistory ? o.status != _OrderStatus.open : o.status == _OrderStatus.open).toList();
+    final visible = widget.orders
+        .where((o) => _showHistory ? o.status != SpotOrderStatus.open : o.status == SpotOrderStatus.open)
+        .toList();
 
     return Container(
       color: NexbitColors.panel,
@@ -150,7 +92,7 @@ class _OpenOrdersPanelState extends State<OpenOrdersPanel> {
     );
   }
 
-  Widget _buildRows(List<_MockOrder> visible) {
+  Widget _buildRows(List<SpotOrder> visible) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -174,20 +116,21 @@ class _OpenOrdersPanelState extends State<OpenOrdersPanel> {
             itemCount: visible.length,
             itemBuilder: (context, i) {
               final o = visible[i];
+              final isBuy = o.side == SpotOrderSide.buy;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
                 child: Row(
                   children: [
-                    _cell(o.pair, flex: 2),
+                    _cell(o.pair.label, flex: 2),
                     _cell(
-                      '${o.isBuy ? S.buyAction('').trim() : S.sellAction('').trim()} · ${o.type.label}',
+                      '${isBuy ? S.buyAction('').trim() : S.sellAction('').trim()} · ${o.orderType.label}',
                       flex: 2,
-                      color: o.isBuy ? NexbitColors.up : NexbitColors.down,
+                      color: isBuy ? NexbitColors.up : NexbitColors.down,
                     ),
-                    _cell(formatPrice(o.price, o.decimals), flex: 3, mono: true),
-                    _cell(o.amount.toStringAsFixed(o.decimals >= 3 ? 3 : 5), flex: 2, mono: true),
-                    _cell(formatPrice(o.total, o.decimals), flex: 3, mono: true),
-                    _cell(_time(o.time), flex: 2, mono: true, color: NexbitColors.muted2),
+                    _cell(formatPrice(o.price, o.pair.decimals), flex: 3, mono: true),
+                    _cell(o.amount.toStringAsFixed(o.pair.decimals >= 3 ? 3 : 5), flex: 2, mono: true),
+                    _cell(formatPrice(o.total, 0), flex: 3, mono: true),
+                    _cell(_time(o.createdAt), flex: 2, mono: true, color: NexbitColors.muted2),
                     _cell(_statusLabel(o.status), flex: 2, color: _statusColor(o.status)),
                     if (!_showHistory)
                       Expanded(
@@ -195,7 +138,7 @@ class _OpenOrdersPanelState extends State<OpenOrdersPanel> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: TextButton(
-                            onPressed: () => _cancel(o),
+                            onPressed: () => widget.onCancel(o),
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: Size.zero,
@@ -226,6 +169,29 @@ class _OpenOrdersPanelState extends State<OpenOrdersPanel> {
             : NexbitText.body(fontSize: 12, color: color ?? NexbitColors.text);
     return Expanded(flex: flex, child: Text(text, style: style, overflow: TextOverflow.ellipsis));
   }
+}
+
+/// Deterministic per-pair fake order history — shown only to guests
+/// (never touches the backend), same purpose as Futures' seeded demo
+/// position: the page still looks alive to a visitor who hasn't logged
+/// in yet.
+List<SpotOrder> seedGuestOrders(TradingPair pair) {
+  final rng = Random(pair.id.hashCode);
+  final now = DateTime.now();
+  final types = OrderType.values;
+  return List.generate(22, (i) {
+    final isOpen = i < 8;
+    final priceJitter = 1 + (rng.nextDouble() - 0.5) * 0.01;
+    return SpotOrder(
+      pair: pair,
+      side: rng.nextBool() ? SpotOrderSide.buy : SpotOrderSide.sell,
+      orderType: types[rng.nextInt(types.length)],
+      price: pair.base * priceJitter,
+      amount: double.parse((rng.nextDouble() * 0.5 + 0.01).toStringAsFixed(pair.decimals >= 3 ? 3 : 5)),
+      status: isOpen ? SpotOrderStatus.open : (rng.nextBool() ? SpotOrderStatus.filled : SpotOrderStatus.cancelled),
+      createdAt: now.subtract(Duration(minutes: i * 37 + 5)),
+    );
+  });
 }
 
 class _OrdersTab extends StatelessWidget {
