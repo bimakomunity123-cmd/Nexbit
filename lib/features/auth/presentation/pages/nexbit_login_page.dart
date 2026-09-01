@@ -28,8 +28,8 @@ class _NexbitLoginPageState extends State<NexbitLoginPage> {
   bool _obscure = true;
   bool _remember = false;
   bool _loading = false;
-  final _emailController = TextEditingController(text: 'oasdmoasdm@gmail.com');
-  final _passwordController = TextEditingController(text: 'password123');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   @override
   void dispose() {
