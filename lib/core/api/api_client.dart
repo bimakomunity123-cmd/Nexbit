@@ -115,6 +115,18 @@ class ApiClient {
     return _postJson('/spot/orders/$orderId/cancel', {}, token: token);
   }
 
+  // ---- Staking ----
+
+  static Future<List<dynamic>> getStakingHoldings(String token) => _getList('/staking/holdings', token: token);
+  static Future<Map<String, dynamic>> getStakingAccount(String token) => _getJson('/staking/account', token: token);
+  static Future<List<dynamic>> getStakingPositions(String token) => _getList('/staking/positions', token: token);
+  static Future<Map<String, dynamic>> createStakingPosition(String token, Map<String, dynamic> body) {
+    return _postJson('/staking/positions', body, token: token);
+  }
+  static Future<Map<String, dynamic>> unstakeStakingPosition(String token, String positionId, double reward) {
+    return _postJson('/staking/positions/$positionId/unstake', {'reward': reward}, token: token);
+  }
+
   // ---- Trading (Futures balance/positions) ----
 
   static Future<Map<String, dynamic>> getAccount(String token) => _getJson('/trading/account', token: token);

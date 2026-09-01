@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
+import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/strings.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
@@ -28,6 +30,11 @@ class NexbitStakingDetailPage extends StatefulWidget {
 class _NexbitStakingDetailPageState extends State<NexbitStakingDetailPage> {
   late String _durationId = widget.asset.defaultDuration;
   late final _amountController = TextEditingController(text: formatStakeAmount(_defaultAmount, decimals: 0));
+  // Overridden with the real value from the backend for a logged-in
+  // user (see initState) — stays at the static mock default for guests,
+  // same split every other "make it real" page in this app uses.
+  late double _availableBalance = widget.asset.availableBalance;
+  bool _submitting = false;
 
   double get _defaultAmount => widget.asset.minStake * 100 < widget.asset.availableBalance
       ? (widget.asset.minStake * 100).clamp(widget.asset.minStake, widget.asset.availableBalance)
@@ -44,23 +51,78 @@ class _NexbitStakingDetailPageState extends State<NexbitStakingDetailPage> {
   double get _total => _amount + _reward;
 
   @override
+  void initState() {
+    super.initState();
+    if (isLoggedIn.value) _loadRealBalance();
+  }
+
+  Future<void> _loadRealBalance() async {
+    try {
+      final holdings = await ApiClient.getStakingHoldings(authToken.value);
+      Map<String, dynamic>? match;
+      for (final h in holdings) {
+        final entry = h as Map<String, dynamic>;
+        if (entry['asset_id'] == widget.asset.id) {
+          match = entry;
+          break;
+        }
+      }
+      if (match == null || !mounted) return;
+      setState(() => _availableBalance = (match!['quantity'] as num).toDouble());
+    } catch (_) {
+      // Stays at the mock default set in the field initializer above —
+      // this page still works fine for browsing even without this
+      // succeeding.
+    }
+  }
+
+  @override
   void dispose() {
     _amountController.dispose();
     super.dispose();
   }
 
   Future<void> _confirm() async {
-    if (_amount < widget.asset.minStake) return;
+    if (_amount < widget.asset.minStake || _submitting) return;
+
+    if (!isLoggedIn.value) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.stakingLoginRequiredSnack),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: S.navLogin,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NexbitLoginPage())),
+          ),
+        ),
+      );
+      return;
+    }
+
     final ok = await showStakingConfirmDialog(
       context: context,
       asset: widget.asset,
       amount: _amount,
       duration: _duration,
     );
-    if (ok == true && mounted) {
+    if (ok != true || !mounted) return;
+
+    setState(() => _submitting = true);
+    try {
+      await ApiClient.createStakingPosition(authToken.value, {
+        'asset_id': widget.asset.id,
+        'amount': _amount,
+        'duration_id': _durationId,
+        'apy': _duration.apy,
+      });
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const NexbitStakingPortfolioPage()),
       );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
     }
   }
 
@@ -124,7 +186,12 @@ class _NexbitStakingDetailPageState extends State<NexbitStakingDetailPage> {
                               const SizedBox(height: 18),
                               _HeaderCard(asset: asset, apy: _duration.apy),
                               const SizedBox(height: 24),
-                              _AmountField(asset: asset, controller: _amountController, onChanged: () => setState(() {})),
+                              _AmountField(
+                                asset: asset,
+                                availableBalance: _availableBalance,
+                                controller: _amountController,
+                                onChanged: () => setState(() {}),
+                              ),
                               const SizedBox(height: 24),
                               Text(S.stakingChooseDuration,
                                   style: NexbitText.body(fontSize: 13, weight: FontWeight.w600, color: NexbitColors.text)),
@@ -139,7 +206,7 @@ class _NexbitStakingDetailPageState extends State<NexbitStakingDetailPage> {
                               const SizedBox(height: 20),
                               SizedBox(
                                 width: double.infinity,
-                                child: PrimaryButton(label: S.stakingConfirmButton, onTap: _confirm),
+                                child: PrimaryButton(label: S.stakingConfirmButton, onTap: _submitting ? () {} : _confirm),
                               ),
                               const SizedBox(height: 40),
                             ],
@@ -218,9 +285,10 @@ class _HeaderCard extends StatelessWidget {
 
 class _AmountField extends StatelessWidget {
   final StakingAsset asset;
+  final double availableBalance;
   final TextEditingController controller;
   final VoidCallback onChanged;
-  const _AmountField({required this.asset, required this.controller, required this.onChanged});
+  const _AmountField({required this.asset, required this.availableBalance, required this.controller, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -255,13 +323,13 @@ class _AmountField extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(S.stakingAvailable(formatStakeAmount(asset.availableBalance, decimals: asset.availableBalance < 10 ? 4 : 2), asset.id),
+            Text(S.stakingAvailable(formatStakeAmount(availableBalance, decimals: availableBalance < 10 ? 4 : 2), asset.id),
                 style: NexbitText.body(fontSize: 12, color: NexbitColors.muted2)),
             Hoverable(
               hoverScale: 1.05,
               builder: (context, hovered) => InkWell(
                 onTap: () {
-                  controller.text = formatStakeAmount(asset.availableBalance, decimals: asset.availableBalance < 10 ? 4 : 0);
+                  controller.text = formatStakeAmount(availableBalance, decimals: availableBalance < 10 ? 4 : 0);
                   onChanged();
                 },
                 child: Container(

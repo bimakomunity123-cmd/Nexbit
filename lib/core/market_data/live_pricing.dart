@@ -63,3 +63,21 @@ List<TradingPair> liveTradingPairs() => kTradingPairs.map(withLivePrice).toList(
 
 /// [kFuturesCryptoContracts] with live USD prices where available.
 List<FuturesContract> liveFuturesCryptoContracts() => kFuturesCryptoContracts.map(withLiveContractPrice).toList();
+
+/// A fixed, approximate USD price for staking assets CoinGecko doesn't
+/// happen to be tracked for under this id elsewhere in the app (or
+/// hasn't loaded yet) — purely cosmetic (the Staking pages' "= $X"
+/// lines), never sent to the backend, so accuracy beyond "plausible
+/// order of magnitude" doesn't matter here the way it would for an
+/// actual trade.
+const _kApproxUsdPriceFallback = <String, double>{
+  'ETH': 3560, 'SOL': 144, 'USDT': 1, 'ADA': 0.75, 'BNB': 600, 'DOT': 7,
+};
+
+/// Best-effort USD price for a Staking asset id — live where
+/// [LivePriceService] tracks it, [_kApproxUsdPriceFallback] otherwise.
+double approxUsdPriceFor(String assetId) {
+  final live = LivePriceService.prices.value[assetId];
+  if (live != null) return live.priceUsd;
+  return _kApproxUsdPriceFallback[assetId] ?? 0;
+}

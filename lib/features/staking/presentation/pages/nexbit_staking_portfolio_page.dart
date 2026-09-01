@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../../core/api/api_client.dart';
+import '../../../../core/auth/session.dart';
 import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
+import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../landing/presentation/widgets/network_background.dart';
 import '../../../landing/presentation/widgets/nexbit_buttons.dart';
@@ -27,9 +30,63 @@ class NexbitStakingPortfolioPage extends StatefulWidget {
 }
 
 class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage> {
-  // Mutable copy of the seed data so Unstake can actually remove a row —
-  // this is the source of truth for both the table and the stat cards.
-  late final List<ActiveStake> _stakes = List.of(kSeedActiveStakes);
+  // Guests see the deterministic seeded demo stakes (local-only, never
+  // touches the backend); a logged-in user's real stakes/reward are
+  // fetched from the backend in initState instead — same guest-vs-real
+  // split Futures and Spot use for their own balances/positions.
+  late List<ActiveStake> _stakes = isLoggedIn.value ? [] : List.of(kSeedActiveStakes);
+  double _realizedReward = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    if (isLoggedIn.value) _loadStakingData();
+  }
+
+  // Loads the logged-in user's real stakes/realized reward from the
+  // backend. Left at the guest-mode empty state on any failure (offline,
+  // backend down) rather than showing an error — the page still works
+  // fine for browsing even without this succeeding.
+  Future<void> _loadStakingData() async {
+    try {
+      final token = authToken.value;
+      final results = await Future.wait([
+        ApiClient.getStakingAccount(token),
+        ApiClient.getStakingPositions(token),
+      ]);
+      final account = results[0] as Map<String, dynamic>;
+      final positionsJson = results[1] as List<dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _realizedReward = (account['realized_reward'] as num).toDouble();
+        _stakes = positionsJson
+            .map((j) => j as Map<String, dynamic>)
+            .where((j) => j['status'] == 'active')
+            .map(_stakeFromJson)
+            .toList();
+      });
+    } catch (_) {
+      // Stays on the empty-but-logged-in state set in the field
+      // initializer above — no seeded demo stake shown to a real
+      // account even if the fetch fails.
+    }
+  }
+
+  ActiveStake _stakeFromJson(Map<String, dynamic> json) {
+    final assetId = json['asset_id'] as String;
+    final asset = kStakingAssets.firstWhere((a) => a.id == assetId, orElse: () => kStakingAssets.first);
+    return ActiveStake(
+      backendId: json['id'] as String,
+      id: assetId,
+      name: asset.name,
+      color: asset.iconColor,
+      amount: (json['amount'] as num).toDouble(),
+      amountDecimals: (json['amount'] as num).toDouble() < 10 ? 4 : 0,
+      apy: (json['apy'] as num).toDouble(),
+      durationId: json['duration_id'] as String,
+      startedAt: DateTime.parse(json['started_at'] as String),
+    );
+  }
 
   Future<void> _handleDetail(ActiveStake stake) {
     return showStakeDetailDialog(
@@ -42,7 +99,34 @@ class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage>
   Future<void> _handleUnstake(ActiveStake stake) async {
     final confirmed = await showUnstakeConfirmDialog(context: context, stake: stake);
     if (confirmed != true || !mounted) return;
-    setState(() => _stakes.removeWhere((s) => s.id == stake.id));
+
+    // Only a backend-persisted stake (backendId != null) needs a server
+    // round-trip — the guest-mode seeded stake unstakes purely locally,
+    // same as before this page had a backend at all.
+    if (stake.backendId != null) {
+      try {
+        // StakingAccount.realized_reward is a single USD-denominated
+        // accumulator shared across every asset a user has ever staked
+        // (see its docstring) — reward has to be converted from the
+        // stake's own asset unit (e.g. ETH) to USD before sending it,
+        // or unstaking two different assets would just add raw ETH and
+        // raw SOL quantities together as if they were the same currency.
+        final rewardUsd = stake.reward * approxUsdPriceFor(stake.id);
+        final result = await ApiClient.unstakeStakingPosition(authToken.value, stake.backendId!, rewardUsd);
+        if (!mounted) return;
+        setState(() {
+          _realizedReward = ((result['account'] as Map<String, dynamic>)['realized_reward'] as num).toDouble();
+          _stakes = _stakes.where((s) => s.backendId != stake.backendId).toList();
+        });
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
+        return;
+      }
+    } else {
+      setState(() => _stakes = _stakes.where((s) => s != stake).toList());
+    }
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -105,6 +189,7 @@ class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage>
                   final content = _MainContent(
                     isMobile: isMobile,
                     stakes: _stakes,
+                    realizedReward: _realizedReward,
                     onOpenMarketplace: openMarketplace,
                     onDetail: _handleDetail,
                     onUnstake: _handleUnstake,
@@ -131,6 +216,7 @@ class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage>
 class _MainContent extends StatelessWidget {
   final bool isMobile;
   final List<ActiveStake> stakes;
+  final double realizedReward;
   final VoidCallback onOpenMarketplace;
   final ValueChanged<ActiveStake> onDetail;
   final ValueChanged<ActiveStake> onUnstake;
@@ -138,6 +224,7 @@ class _MainContent extends StatelessWidget {
   const _MainContent({
     required this.isMobile,
     required this.stakes,
+    required this.realizedReward,
     required this.onOpenMarketplace,
     required this.onDetail,
     required this.onUnstake,
@@ -145,10 +232,16 @@ class _MainContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalStakedUsd = stakes.fold<double>(0, (sum, s) => sum + s.amountUsd);
+    final totalStakedUsd = stakes.fold<double>(0, (sum, s) => sum + s.amount * approxUsdPriceFor(s.id));
     final weightedApy = totalStakedUsd == 0
         ? 0.0
-        : stakes.fold<double>(0, (sum, s) => sum + s.amountUsd * s.apy) / totalStakedUsd;
+        : stakes.fold<double>(0, (sum, s) => sum + s.amount * approxUsdPriceFor(s.id) * s.apy) / totalStakedUsd;
+    // Total Rewards = reward already realized from past unstakes (a
+    // running accumulator, like Futures' realized_pnl) plus whatever's
+    // still accruing on currently-active stakes — mirrors how Futures'
+    // Account Info card adds startingBalance + realizedPnl + unrealizedPnl.
+    final unrealizedRewardUsd = stakes.fold<double>(0, (sum, s) => sum + s.reward * approxUsdPriceFor(s.id));
+    final totalRewardsUsd = realizedReward + unrealizedRewardUsd;
 
     return Padding(
       padding: EdgeInsets.all(isMobile ? 18 : 28),
@@ -161,12 +254,13 @@ class _MainContent extends StatelessWidget {
             spacing: 16,
             runSpacing: 16,
             children: [
-              // Total Staked and Active Stakes reflect the live table —
-              // unstaking updates them immediately. Total Rewards is a
-              // separate historical figure (reward already paid out over
-              // time), so it stays put when a stake is closed.
+              // Total Staked/Active Stakes reflect the live table —
+              // unstaking updates them immediately. Total Rewards
+              // includes both realized (past unstakes) and unrealized
+              // (currently accruing) reward, so it keeps moving even
+              // between unstakes.
               _StatCard(label: S.stakingStatTotalStaked, value: '\$${formatStakeAmount(totalStakedUsd)}'),
-              _StatCard(label: S.stakingStatTotalRewards, value: r'$184.52', valueColor: NexbitColors.accent),
+              _StatCard(label: S.stakingStatTotalRewards, value: '\$${formatStakeAmount(totalRewardsUsd)}', valueColor: NexbitColors.accent),
               _StatCard(label: S.stakingStatEstimatedApy, value: '${weightedApy.toStringAsFixed(2)}%'),
               _StatCard(label: S.stakingStatActiveStakes, value: '${stakes.length}'),
             ],
@@ -183,7 +277,7 @@ class _MainContent extends StatelessWidget {
                 onDetail: onDetail,
                 onUnstake: onUnstake,
               );
-              const donut = _RewardDonutCard();
+              final donut = _RewardDonutCard(stakes: stakes, totalRewardsUsd: totalRewardsUsd);
               if (!wide) {
                 return Column(children: [table, const SizedBox(height: 18), donut]);
               }
@@ -324,6 +418,8 @@ class _StakeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final periodLabel = stake.isLocked ? S.stakingDaysBadge(stake.lockDays) : S.stakingFlexible;
+    final amountUsd = stake.amount * approxUsdPriceFor(stake.id);
+    final rewardUsd = stake.reward * approxUsdPriceFor(stake.id);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(border: Border(top: BorderSide(color: NexbitColors.lineSoft))),
@@ -362,7 +458,7 @@ class _StakeRow extends StatelessWidget {
               children: [
                 Text('${formatStakeAmount(stake.amount, decimals: stake.amountDecimals)} ${stake.id}',
                     style: NexbitText.mono(fontSize: 12.5, weight: FontWeight.w600)),
-                Text('= \$${formatStakeAmount(stake.amountUsd)}', style: NexbitText.body(fontSize: 10.5, color: NexbitColors.muted2)),
+                Text('= \$${formatStakeAmount(amountUsd)}', style: NexbitText.body(fontSize: 10.5, color: NexbitColors.muted2)),
               ],
             ),
           ),
@@ -378,7 +474,7 @@ class _StakeRow extends StatelessWidget {
               children: [
                 Text('+${formatStakeAmount(stake.reward, decimals: stake.rewardDecimals)} ${stake.id}',
                     style: NexbitText.mono(fontSize: 12.5, weight: FontWeight.w600, color: NexbitColors.up)),
-                Text('= \$${formatStakeAmount(stake.rewardUsd)}', style: NexbitText.body(fontSize: 10.5, color: NexbitColors.muted2)),
+                Text('= \$${formatStakeAmount(rewardUsd)}', style: NexbitText.body(fontSize: 10.5, color: NexbitColors.muted2)),
               ],
             ),
           ),
@@ -458,16 +554,30 @@ class _SmallButton extends StatelessWidget {
 }
 
 class _RewardDonutCard extends StatelessWidget {
-  const _RewardDonutCard();
+  final List<ActiveStake> stakes;
+  final double totalRewardsUsd;
+  const _RewardDonutCard({required this.stakes, required this.totalRewardsUsd});
 
   @override
   Widget build(BuildContext context) {
-    const slices = [
-      DonutSlice(label: 'USDT', color: Color(0xFF26A17B), percent: 40),
-      DonutSlice(label: 'ETH', color: Color(0xFF627EEA), percent: 30),
-      DonutSlice(label: 'SOL', color: Color(0xFF14F195), percent: 20),
-      DonutSlice(label: 'ADA', color: Color(0xFF0033AD), percent: 10),
-    ];
+    // Composition of reward-so-far by asset — falls back to an even
+    // illustrative split if nothing's accrued anything yet (avoids a
+    // divide-by-zero donut with no active stakes at all).
+    final byAsset = <String, double>{};
+    for (final s in stakes) {
+      byAsset[s.id] = (byAsset[s.id] ?? 0) + s.reward * approxUsdPriceFor(s.id);
+    }
+    final totalUnrealized = byAsset.values.fold<double>(0, (a, b) => a + b);
+    final slices = totalUnrealized > 0
+        ? byAsset.entries
+            .map((e) => DonutSlice(
+                  label: e.key,
+                  color: kStakingAssets.firstWhere((a) => a.id == e.key, orElse: () => kStakingAssets.first).iconColor,
+                  percent: e.value / totalUnrealized * 100,
+                ))
+            .toList()
+        : const [DonutSlice(label: '—', color: NexbitColors.muted2, percent: 100)];
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -481,7 +591,7 @@ class _RewardDonutCard extends StatelessWidget {
           Text(S.stakingRewardThisMonth, style: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700, color: NexbitColors.text)),
           const SizedBox(height: 18),
           Center(
-            child: StakingRewardDonut(slices: slices, centerValue: r'$184.52', centerLabel: S.stakingTotal),
+            child: StakingRewardDonut(slices: slices, centerValue: '\$${formatStakeAmount(totalRewardsUsd)}', centerLabel: S.stakingTotal),
           ),
           const SizedBox(height: 18),
           for (final s in slices)

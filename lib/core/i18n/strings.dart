@@ -524,6 +524,8 @@ class S {
   static String get stakingSummaryRewardDaily => _t('Setiap hari', 'Every day');
   static String get stakingSummaryTotal => _t('Total setelah periode', 'Total after period');
   static String get stakingConfirmButton => _t('Konfirmasi Staking', 'Confirm Staking');
+  static String get stakingLoginRequiredSnack =>
+      _t('Masuk dulu untuk mulai staking', 'Log in first to start staking');
 
   // ---------------------------------------------------------------------
   // Staking — confirm dialog
