@@ -115,6 +115,69 @@ class SpotOrder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class StakingHolding(Base):
+    """One row per (user, asset) — how much of that asset is available
+    to stake. Seeded per-asset from a fixed demo default (see
+    _DEFAULT_HOLDINGS in routers/staking.py, which must be kept in sync
+    with kStakingAssets' availableBalance in
+    lib/features/staking/domain/models/staking_asset.dart) the first
+    time it's queried for that user. A separate demo "wallet" from
+    Spot's IDR balance and Futures' USDT margin account — this app
+    doesn't model one unified balance per asset across features, the
+    same simplification already made between Spot and Futures.
+    """
+    __tablename__ = "staking_holdings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+    asset_id: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
+class StakingAccount(Base):
+    """One row per user — accumulates realized_reward every time a
+    stake is unstaked, mirroring Futures' Account.realized_pnl above.
+    Unlike that field, this one is USD-denominated rather than in any
+    particular asset's native unit — a user can stake and unstake
+    several different assets (ETH, SOL, ...), and this single number
+    has to mean the same thing across all of them, so the Flutter side
+    converts each stake's reward to its USD-equivalent (see
+    core/market_data/live_pricing.dart's approxUsdPriceFor) before
+    sending it here, rather than the raw asset-unit reward amount.
+    """
+    __tablename__ = "staking_accounts"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+    realized_reward: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class StakingPosition(Base):
+    """One stake, active until unstaked. `apy` is locked in at the
+    moment of staking (so a later change to a duration tier's rate on
+    the Flutter side never retroactively changes an existing stake's
+    math) rather than looked up live at read time. Reward accrued so
+    far is NOT stored here — like Futures' unrealized PnL, it depends
+    on the current time, which only the client needs to compute
+    (amount * apy / 100 * elapsed_days / 365); only the reward actually
+    realized at the moment of unstaking (client-computed, same "trust
+    the client's number" caveat as ClosePositionRequest.realized_pnl
+    and Spot's order price — see those for why that's an accepted
+    demo-only compromise) gets persisted, into
+    StakingAccount.realized_reward.
+    """
+    __tablename__ = "staking_positions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+    asset_id: Mapped[str] = mapped_column(String, nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    duration_id: Mapped[str] = mapped_column(String, nullable=False)  # 'flexible' | '30d' | '60d' | '90d'
+    apy: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="active")  # 'active' | 'unstaked'
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    unstaked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class PasswordReset(Base):
     """A one-time password-reset token. IMPORTANT demo compromise: this
     app has no outbound email service configured (PythonAnywhere's free

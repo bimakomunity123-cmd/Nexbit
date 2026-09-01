@@ -119,6 +119,48 @@ class CreateSpotOrderRequest(BaseModel):
     amount: float = Field(gt=0, le=1_000_000)
 
 
+class StakingHoldingOut(BaseModel):
+    asset_id: str
+    quantity: float
+
+    class Config:
+        from_attributes = True
+
+
+class StakingAccountOut(BaseModel):
+    realized_reward: float
+
+    class Config:
+        from_attributes = True
+
+
+class StakingPositionOut(BaseModel):
+    id: str
+    asset_id: str
+    amount: float
+    duration_id: str
+    apy: float
+    status: str
+    started_at: datetime
+    unstaked_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
+class CreateStakingPositionRequest(BaseModel):
+    asset_id: str = Field(min_length=1, max_length=10, pattern=r"^[A-Za-z0-9]+$")
+    amount: float = Field(gt=0, le=1_000_000)
+    duration_id: str = Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9]+$")
+    apy: float = Field(gt=0, le=100)
+
+
+class UnstakePositionRequest(BaseModel):
+    # Client-computed accrued reward — see StakingPosition's docstring
+    # in models.py for why that's an accepted demo-only limitation.
+    reward: float = Field(ge=0, le=1_000_000)
+
+
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str = Field(min_length=8, max_length=72)
