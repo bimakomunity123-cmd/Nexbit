@@ -36,6 +36,10 @@ class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage>
   // split Futures and Spot use for their own balances/positions.
   late List<ActiveStake> _stakes = isLoggedIn.value ? [] : List.of(kSeedActiveStakes);
   double _realizedReward = 0;
+  // True only while a logged-in user's real stakes/reward are still in
+  // flight — avoids briefly showing "no active stakes" / $0 rewards for
+  // an account that actually has some, before the real list arrives.
+  late bool _loadingAccount = isLoggedIn.value;
 
   @override
   void initState() {
@@ -64,11 +68,14 @@ class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage>
             .where((j) => j['status'] == 'active')
             .map(_stakeFromJson)
             .toList();
+        _loadingAccount = false;
       });
     } catch (_) {
       // Stays on the empty-but-logged-in state set in the field
       // initializer above — no seeded demo stake shown to a real
-      // account even if the fetch fails.
+      // account even if the fetch fails. Still clears the loading flag
+      // so the page doesn't claim to be loading forever.
+      if (mounted) setState(() => _loadingAccount = false);
     }
   }
 
@@ -190,6 +197,7 @@ class _NexbitStakingPortfolioPageState extends State<NexbitStakingPortfolioPage>
                     isMobile: isMobile,
                     stakes: _stakes,
                     realizedReward: _realizedReward,
+                    loading: _loadingAccount,
                     onOpenMarketplace: openMarketplace,
                     onDetail: _handleDetail,
                     onUnstake: _handleUnstake,
@@ -217,6 +225,7 @@ class _MainContent extends StatelessWidget {
   final bool isMobile;
   final List<ActiveStake> stakes;
   final double realizedReward;
+  final bool loading;
   final VoidCallback onOpenMarketplace;
   final ValueChanged<ActiveStake> onDetail;
   final ValueChanged<ActiveStake> onUnstake;
@@ -225,6 +234,7 @@ class _MainContent extends StatelessWidget {
     required this.isMobile,
     required this.stakes,
     required this.realizedReward,
+    required this.loading,
     required this.onOpenMarketplace,
     required this.onDetail,
     required this.onUnstake,
@@ -259,10 +269,14 @@ class _MainContent extends StatelessWidget {
               // includes both realized (past unstakes) and unrealized
               // (currently accruing) reward, so it keeps moving even
               // between unstakes.
-              _StatCard(label: S.stakingStatTotalStaked, value: '\$${formatStakeAmount(totalStakedUsd)}'),
-              _StatCard(label: S.stakingStatTotalRewards, value: '\$${formatStakeAmount(totalRewardsUsd)}', valueColor: NexbitColors.accent),
-              _StatCard(label: S.stakingStatEstimatedApy, value: '${weightedApy.toStringAsFixed(2)}%'),
-              _StatCard(label: S.stakingStatActiveStakes, value: '${stakes.length}'),
+              _StatCard(label: S.stakingStatTotalStaked, value: loading ? '···' : '\$${formatStakeAmount(totalStakedUsd)}'),
+              _StatCard(
+                label: S.stakingStatTotalRewards,
+                value: loading ? '···' : '\$${formatStakeAmount(totalRewardsUsd)}',
+                valueColor: NexbitColors.accent,
+              ),
+              _StatCard(label: S.stakingStatEstimatedApy, value: loading ? '···' : '${weightedApy.toStringAsFixed(2)}%'),
+              _StatCard(label: S.stakingStatActiveStakes, value: loading ? '···' : '${stakes.length}'),
             ],
           ),
           const SizedBox(height: 26),
@@ -273,6 +287,7 @@ class _MainContent extends StatelessWidget {
               final wide = constraints.maxWidth >= 900;
               final table = _ActiveStakesTable(
                 stakes: stakes,
+                loading: loading,
                 onOpenMarketplace: onOpenMarketplace,
                 onDetail: onDetail,
                 onUnstake: onUnstake,
@@ -328,12 +343,14 @@ class _StatCard extends StatelessWidget {
 
 class _ActiveStakesTable extends StatelessWidget {
   final List<ActiveStake> stakes;
+  final bool loading;
   final VoidCallback onOpenMarketplace;
   final ValueChanged<ActiveStake> onDetail;
   final ValueChanged<ActiveStake> onUnstake;
 
   const _ActiveStakesTable({
     required this.stakes,
+    required this.loading,
     required this.onOpenMarketplace,
     required this.onDetail,
     required this.onUnstake,
@@ -349,15 +366,24 @@ class _ActiveStakesTable extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: NexbitColors.line),
         ),
-        child: Column(
-          children: [
-            Icon(Icons.savings_outlined, size: 34, color: NexbitColors.muted2),
-            const SizedBox(height: 14),
-            Text(S.stakingEmptyActiveStakes, style: NexbitText.body(fontSize: 13, color: NexbitColors.muted)),
-            const SizedBox(height: 18),
-            PrimaryButton(label: S.stakingCtaPrimary, onTap: onOpenMarketplace),
-          ],
-        ),
+        child: loading
+            // Don't claim "no active stakes" while a logged-in user's
+            // real list might still be on its way — that would read as
+            // a false "you have nothing staked" for an account that
+            // actually does.
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+              )
+            : Column(
+                children: [
+                  Icon(Icons.savings_outlined, size: 34, color: NexbitColors.muted2),
+                  const SizedBox(height: 14),
+                  Text(S.stakingEmptyActiveStakes, style: NexbitText.body(fontSize: 13, color: NexbitColors.muted)),
+                  const SizedBox(height: 18),
+                  PrimaryButton(label: S.stakingCtaPrimary, onTap: onOpenMarketplace),
+                ],
+              ),
       );
     }
     return Container(

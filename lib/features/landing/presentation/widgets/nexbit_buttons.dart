@@ -52,7 +52,12 @@ class _HoverableState extends State<Hoverable> {
 class PrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  const PrimaryButton({super.key, required this.label, required this.onTap});
+  /// Shows a spinner instead of the label and ignores taps — for a
+  /// button that kicks off a real network request (staking, etc.), so
+  /// a slow backend can't be double-submitted and the tap has visible
+  /// feedback instead of appearing to do nothing.
+  final bool loading;
+  const PrimaryButton({super.key, required this.label, required this.onTap, this.loading = false});
 
   @override
   Widget build(BuildContext context) {
@@ -78,11 +83,20 @@ class PrimaryButton extends StatelessWidget {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
-            onTap: onTap,
+            onTap: loading ? null : onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
-              child: Text(label,
-                  style: NexbitText.body(fontSize: 15, weight: FontWeight.w700, color: const Color(0xFF04120E))),
+              child: loading
+                  ? const Center(
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.4, color: Color(0xFF04120E)),
+                      ),
+                    )
+                  : Text(label,
+                      textAlign: TextAlign.center,
+                      style: NexbitText.body(fontSize: 15, weight: FontWeight.w700, color: const Color(0xFF04120E))),
             ),
           ),
         ),

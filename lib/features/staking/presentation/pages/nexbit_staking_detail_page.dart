@@ -206,7 +206,7 @@ class _NexbitStakingDetailPageState extends State<NexbitStakingDetailPage> {
                               const SizedBox(height: 20),
                               SizedBox(
                                 width: double.infinity,
-                                child: PrimaryButton(label: S.stakingConfirmButton, onTap: _submitting ? () {} : _confirm),
+                                child: PrimaryButton(label: S.stakingConfirmButton, onTap: _confirm, loading: _submitting),
                               ),
                               const SizedBox(height: 40),
                             ],

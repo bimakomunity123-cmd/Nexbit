@@ -50,6 +50,11 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   late List<FuturesPosition> _positions = isLoggedIn.value ? [] : _seedGuestPosition();
   double _realizedPnl = 0;
   double _balance = 1250.0;
+  // True only while a logged-in user's real balance/positions are still
+  // in flight — see FuturesAccountInfoCard's own doc for why this
+  // exists (avoids flashing the startingBalance default before the
+  // real figures arrive).
+  late bool _loadingAccount = isLoggedIn.value;
 
   // Entry price is a small offset below whatever BTC's current price
   // is (live if LivePriceService has already fetched, the static mock
@@ -95,11 +100,14 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
         _balance = (account['balance'] as num).toDouble();
         _realizedPnl = (account['realized_pnl'] as num).toDouble();
         _positions = positionsJson.map((j) => _positionFromJson(j as Map<String, dynamic>)).toList();
+        _loadingAccount = false;
       });
     } catch (_) {
       // Stays on the empty-but-logged-in state set in the field
       // initializer above — no seeded fake position is shown to a real
-      // account even if the fetch fails.
+      // account even if the fetch fails. Still clears the loading flag
+      // so the card doesn't spin forever on a failed fetch.
+      if (mounted) setState(() => _loadingAccount = false);
     }
   }
 
@@ -172,7 +180,11 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   // FuturesOrderFormPanel only ever calls this once the user is actually
   // logged in (it gates submission on isLoggedIn itself), so this can
   // unconditionally hit the backend rather than branching on guest mode.
-  Future<void> _openPosition(FuturesPosition p) async {
+  // Returns whether it actually succeeded — FuturesOrderFormPanel uses
+  // that to decide whether to clear its amount field, not to re-derive
+  // its own success/error messaging (this is the only place that shows
+  // either).
+  Future<bool> _openPosition(FuturesPosition p) async {
     try {
       final json = await ApiClient.openPosition(authToken.value, {
         'contract_id': p.contract.id,
@@ -182,14 +194,16 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
         'leverage': p.leverage,
         'margin_mode': p.marginMode == MarginMode.cross ? 'cross' : 'isolated',
       });
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() => _positions = [..._positions, _positionFromJson(json)]);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(S.futuresOrderPlacedSnack), duration: const Duration(seconds: 2)),
       );
+      return true;
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
+      return false;
     }
   }
 
@@ -498,6 +512,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           markPriceOf: _markPriceOf,
           startingBalance: _balance,
           realizedPnl: _realizedPnl,
+          loading: _loadingAccount,
         ),
         const SizedBox(height: 16),
         FuturesContractDetailsCard(contract: selected),

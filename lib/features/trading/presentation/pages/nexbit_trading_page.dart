@@ -35,6 +35,9 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
   double _idrBalance = 50000000.0;
   Map<String, double> _holdingsByAsset = {};
   late List<SpotOrder> _orders = isLoggedIn.value ? [] : seedGuestOrders(_selected);
+  // True only while a logged-in user's real wallet/holdings are still
+  // in flight — see SpotWalletCard's own doc for why this exists.
+  late bool _loadingAccount = isLoggedIn.value;
 
   static const _hairline = BoxDecoration(border: Border(right: BorderSide(color: NexbitColors.line)));
 
@@ -84,11 +87,14 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
           for (final h in holdingsJson) (h as Map<String, dynamic>)['asset_id'] as String: (h['quantity'] as num).toDouble(),
         };
         _orders = ordersJson.map((j) => _orderFromJson(j as Map<String, dynamic>)).toList();
+        _loadingAccount = false;
       });
     } catch (_) {
       // Stays on the guest-mode defaults set in the field initializers
       // above — no fake orders shown to a real account even if the
-      // fetch fails.
+      // fetch fails. Still clears the loading flag so the wallet card
+      // doesn't spin forever on a failed fetch.
+      if (mounted) setState(() => _loadingAccount = false);
     }
   }
 
@@ -100,7 +106,11 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
 
   double _holdingQuantityOf(String assetId) => _holdingsByAsset[assetId] ?? 0;
 
-  Future<void> _submitOrder(SpotOrderSide side, OrderType orderType, double price, double amount) async {
+  // Returns whether the order actually went through — OrderFormPanel
+  // uses that to decide whether to clear its fields, not to re-derive
+  // its own success/error messaging (this is the only place that shows
+  // either).
+  Future<bool> _submitOrder(SpotOrderSide side, OrderType orderType, double price, double amount) async {
     try {
       final json = await ApiClient.createSpotOrder(authToken.value, {
         'asset_id': _selected.id,
@@ -111,7 +121,7 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
       });
       final newOrder = _orderFromJson(json['order'] as Map<String, dynamic>);
       final walletJson = json['wallet'] as Map<String, dynamic>;
-      if (!mounted) return;
+      if (!mounted) return true;
       setState(() {
         _idrBalance = (walletJson['idr_balance'] as num).toDouble();
         if (newOrder.status == SpotOrderStatus.filled) {
@@ -129,9 +139,11 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
         content: Text(newOrder.status == SpotOrderStatus.filled ? S.tradingOrderFilledSnack : S.tradingOrderPlacedSnack),
         duration: const Duration(seconds: 2),
       ));
+      return true;
     } on ApiException catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
+      return false;
     }
   }
 
@@ -225,6 +237,7 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
           final pair = kTradingPairs.firstWhere((p) => p.id == assetId, orElse: () => _selected);
           return withLivePrice(pair).base;
         },
+        loading: _loadingAccount,
       ),
     );
   }

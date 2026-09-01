@@ -16,7 +16,11 @@ class OrderFormPanel extends StatefulWidget {
   final TradingPair pair;
   final double idrBalance;
   final double Function(String assetId) holdingQuantityOf;
-  final void Function(SpotOrderSide side, OrderType orderType, double price, double amount) onSubmitOrder;
+  /// Returns whether the order actually went through — see
+  /// NexbitTradingPage._submitOrder, which is also the one place that
+  /// shows the resulting success/error snackbar, only once the real
+  /// backend result is known.
+  final Future<bool> Function(SpotOrderSide side, OrderType orderType, double price, double amount) onSubmitOrder;
 
   const OrderFormPanel({
     super.key,
@@ -115,7 +119,7 @@ class _SideForm extends StatefulWidget {
   // live price. Sell: how much of `pair` is actually held. Either way,
   // this is what the 25/50/75/100% quick-amount row is a fraction of.
   final double maxQuantity;
-  final void Function(double price, double amount) onSubmit;
+  final Future<bool> Function(double price, double amount) onSubmit;
 
   const _SideForm({
     super.key,
@@ -134,6 +138,7 @@ class _SideFormState extends State<_SideForm> {
   late final _priceController = TextEditingController(text: formatPrice(widget.pair.base, widget.pair.decimals));
   final _amountController = TextEditingController();
   int? _activePct;
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -160,7 +165,8 @@ class _SideFormState extends State<_SideForm> {
     });
   }
 
-  void _submit() {
+  Future<void> _submit() async {
+    if (_submitting) return;
     if (!isLoggedIn.value) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -180,10 +186,19 @@ class _SideFormState extends State<_SideForm> {
       );
       return;
     }
-    widget.onSubmit(_price, _amount);
+    setState(() => _submitting = true);
+    // widget.onSubmit (see NexbitTradingPage._submitOrder) is the one
+    // that actually shows the resulting success/error snackbar, once
+    // the real backend result is known — this only decides whether to
+    // clear the form afterward.
+    final ok = await widget.onSubmit(_price, _amount);
+    if (!mounted) return;
     setState(() {
-      _amountController.clear();
-      _activePct = null;
+      _submitting = false;
+      if (ok) {
+        _amountController.clear();
+        _activePct = null;
+      }
     });
   }
 
@@ -204,16 +219,26 @@ class _SideFormState extends State<_SideForm> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _submit,
+            onPressed: _submitting ? null : _submit,
             style: ElevatedButton.styleFrom(
               backgroundColor: accent,
               foregroundColor: widget.isBuy ? const Color(0xFF04120E) : const Color(0xFF1A0208),
+              disabledBackgroundColor: accent,
               padding: const EdgeInsets.symmetric(vertical: 13),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               elevation: 0,
               textStyle: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700),
             ),
-            child: Text(actionLabel),
+            child: _submitting
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: widget.isBuy ? const Color(0xFF04120E) : const Color(0xFF1A0208),
+                    ),
+                  )
+                : Text(actionLabel),
           ),
         ),
       ],

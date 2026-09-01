@@ -18,7 +18,11 @@ enum _FuturesOrderType { limit, market, stopLimit, stopMarket }
 class FuturesOrderFormPanel extends StatefulWidget {
   final FuturesContract contract;
   final double availableBalance;
-  final ValueChanged<FuturesPosition> onOpenPosition;
+  /// Returns whether the position actually opened — see
+  /// NexbitFuturesPage._openPosition, which is also the one place that
+  /// shows the resulting success/error snackbar, only once the real
+  /// backend result is known.
+  final Future<bool> Function(FuturesPosition) onOpenPosition;
 
   const FuturesOrderFormPanel({
     super.key,
@@ -39,6 +43,7 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
   int _longLeverage = 10;
   int _shortLeverage = 10;
   MarginMode _marginMode = MarginMode.cross;
+  OrderSide? _submittingSide;
 
   static const _leverageOptions = [1, 2, 3, 5, 10, 20, 25, 50, 75, 100];
   static const _pcts = [10, 25, 50, 75, 100];
@@ -102,7 +107,8 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
     }
   }
 
-  void _submit(OrderSide side) {
+  Future<void> _submit(OrderSide side) async {
+    if (_submittingSide != null) return; // one in-flight submit at a time
     if (!isLoggedIn.value) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -124,7 +130,14 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
       );
       return;
     }
-    widget.onOpenPosition(FuturesPosition(
+    setState(() => _submittingSide = side);
+    // widget.onOpenPosition (see NexbitFuturesPage._openPosition) is the
+    // one that actually shows the success/error snackbar, only once the
+    // real backend result is known — this used to also fire an
+    // optimistic "success" snackbar immediately, which meant a request
+    // that ended up failing still briefly showed "Order berhasil
+    // dibuka" right before the real error appeared.
+    final ok = await widget.onOpenPosition(FuturesPosition(
       contract: widget.contract,
       side: side,
       size: _amount,
@@ -132,12 +145,13 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
       leverage: side == OrderSide.long ? _longLeverage : _shortLeverage,
       marginMode: _marginMode,
     ));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(S.futuresOrderPlacedSnack), duration: const Duration(seconds: 2)),
-    );
+    if (!mounted) return;
     setState(() {
-      _amountController.clear();
-      _activePct = null;
+      _submittingSide = null;
+      if (ok) {
+        _amountController.clear();
+        _activePct = null;
+      }
     });
   }
 
@@ -262,7 +276,8 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
                   textColor: const Color(0xFF04120E),
                   label: S.futuresLongBuy(widget.contract.id),
                   sublabel: '${formatUsdt(_marginFor(_longLeverage), 2)} $quote',
-                  onTap: () => _submit(OrderSide.long),
+                  loading: _submittingSide == OrderSide.long,
+                  onTap: _submittingSide != null ? null : () => _submit(OrderSide.long),
                 ),
               ),
               const SizedBox(width: 10),
@@ -272,7 +287,8 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
                   textColor: Colors.white,
                   label: S.futuresShortSell(widget.contract.id),
                   sublabel: '${formatUsdt(_marginFor(_shortLeverage), 2)} $quote',
-                  onTap: () => _submit(OrderSide.short),
+                  loading: _submittingSide == OrderSide.short,
+                  onTap: _submittingSide != null ? null : () => _submit(OrderSide.short),
                 ),
               ),
             ],
@@ -424,13 +440,15 @@ class _SideButton extends StatelessWidget {
   final Color textColor;
   final String label;
   final String sublabel;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool loading;
   const _SideButton({
     required this.color,
     required this.textColor,
     required this.label,
     required this.sublabel,
     required this.onTap,
+    this.loading = false,
   });
 
   @override
@@ -443,14 +461,25 @@ class _SideButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label, style: NexbitText.body(fontSize: 13, weight: FontWeight.w700, color: textColor)),
-              const SizedBox(height: 2),
-              Text('≈ $sublabel', style: NexbitText.mono(fontSize: 10.5, color: textColor.withOpacity(0.75))),
-            ],
-          ),
+          child: loading
+              ? SizedBox(
+                  height: 33, // matches the two-line label+sublabel height below, so the button doesn't resize
+                  child: Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2, color: textColor),
+                    ),
+                  ),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label, style: NexbitText.body(fontSize: 13, weight: FontWeight.w700, color: textColor)),
+                    const SizedBox(height: 2),
+                    Text('≈ $sublabel', style: NexbitText.mono(fontSize: 10.5, color: textColor.withOpacity(0.75))),
+                  ],
+                ),
         ),
       ),
     );

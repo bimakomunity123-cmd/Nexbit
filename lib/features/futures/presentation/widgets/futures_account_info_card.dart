@@ -11,6 +11,11 @@ class FuturesAccountInfoCard extends StatefulWidget {
   final double Function(String contractId) markPriceOf;
   final double startingBalance;
   final double realizedPnl;
+  /// True while the real balance/positions are still being fetched for
+  /// a logged-in user (see NexbitFuturesPage._loadAccountData) — shows
+  /// placeholders instead of startingBalance's default figures, which
+  /// would otherwise flash briefly before the real numbers arrive.
+  final bool loading;
 
   const FuturesAccountInfoCard({
     super.key,
@@ -18,6 +23,7 @@ class FuturesAccountInfoCard extends StatefulWidget {
     required this.markPriceOf,
     this.startingBalance = 1250.0,
     this.realizedPnl = 0,
+    this.loading = false,
   });
 
   @override
@@ -35,7 +41,7 @@ class _FuturesAccountInfoCardState extends State<FuturesAccountInfoCard> {
     final availableBalance = marginBalance - usedMargin;
     final marginRatio = marginBalance == 0 ? 0.0 : (usedMargin / marginBalance).clamp(0.0, 1.0);
 
-    String fmt(double v) => _hidden ? '••••••' : '\$${v.toStringAsFixed(2)}';
+    String fmt(double v) => widget.loading ? '···' : (_hidden ? '••••••' : '\$${v.toStringAsFixed(2)}');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -72,7 +78,7 @@ class _FuturesAccountInfoCardState extends State<FuturesAccountInfoCard> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(S.futuresMarginRatio, style: NexbitText.body(fontSize: 11.5, color: NexbitColors.muted2)),
-              Text('${(marginRatio * 100).toStringAsFixed(2)}%',
+              Text(widget.loading ? '···' : '${(marginRatio * 100).toStringAsFixed(2)}%',
                   style: NexbitText.mono(fontSize: 12, weight: FontWeight.w600, color: NexbitColors.text)),
             ],
           ),
@@ -80,7 +86,9 @@ class _FuturesAccountInfoCardState extends State<FuturesAccountInfoCard> {
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: marginRatio,
+              // null (indeterminate) while loading doubles as a visible
+              // "still fetching" cue instead of a static, possibly-wrong 0%.
+              value: widget.loading ? null : marginRatio,
               minHeight: 6,
               backgroundColor: NexbitColors.line,
               valueColor: AlwaysStoppedAnimation(marginRatio > 0.7 ? NexbitColors.down : NexbitColors.accent),

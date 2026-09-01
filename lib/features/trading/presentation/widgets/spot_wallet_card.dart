@@ -20,12 +20,18 @@ class SpotWalletCard extends StatefulWidget {
   final double idrBalance;
   final List<SpotHoldingEntry> holdings;
   final double Function(String assetId) priceOf;
+  /// True while a logged-in user's real wallet/holdings are still being
+  /// fetched (see NexbitTradingPage) — shows placeholders instead of
+  /// the default demo balance, which would otherwise flash briefly
+  /// before the real figures arrive.
+  final bool loading;
 
   const SpotWalletCard({
     super.key,
     required this.idrBalance,
     required this.holdings,
     required this.priceOf,
+    this.loading = false,
   });
 
   @override
@@ -39,7 +45,7 @@ class _SpotWalletCardState extends State<SpotWalletCard> {
   Widget build(BuildContext context) {
     final holdingsValue = widget.holdings.fold<double>(0, (sum, h) => sum + h.quantity * widget.priceOf(h.assetId));
     final portfolioValue = widget.idrBalance + holdingsValue;
-    String fmt(double v) => _hidden ? '••••••' : 'Rp${formatPrice(v, 0)}';
+    String fmt(double v) => widget.loading ? '···' : (_hidden ? '••••••' : 'Rp${formatPrice(v, 0)}');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -71,7 +77,9 @@ class _SpotWalletCardState extends State<SpotWalletCard> {
           const SizedBox(height: 10),
           Text(S.spotWalletHoldingsHeading, style: NexbitText.body(fontSize: 11.5, color: NexbitColors.muted2)),
           const SizedBox(height: 8),
-          if (widget.holdings.isEmpty)
+          if (widget.loading)
+            Text('···', style: NexbitText.body(fontSize: 12, color: NexbitColors.muted2))
+          else if (widget.holdings.isEmpty)
             Text(S.spotWalletNoHoldings, style: NexbitText.body(fontSize: 12, color: NexbitColors.muted2))
           else
             ...widget.holdings.map((h) => _holdingRow(h)),
