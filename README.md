@@ -63,6 +63,26 @@ Untuk jalankan melawan backend lokal (lihat backend/README.md dulu):
 flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8020
 ```
 
+## Testing (frontend)
+
+```bash
+flutter test
+```
+
+`test/unit/` mengetes logika murni yang tidak butuh widget tree —
+formatter angka (`formatPrice`/`formatUsdt`/`formatStakeAmount`),
+matematika PnL/margin/likuidasi Futures, akrual reward Staking seiring
+waktu, dan parsing JSON Spot order. `test/widget/` mengetes interaksi UI
+yang tidak menyentuh jaringan sungguhan — validasi form kosong,
+gerbang "harus login dulu" pada form order Futures/Spot (dites
+langsung pada widget form-nya, bukan halaman penuh, supaya tidak perlu
+memuat chart TradingView berbasis `WebView`), dan persistensi toggle
+Keamanan lewat `AppPrefs`. Halaman-halaman yang menyematkan chart
+TradingView (Futures, Trading) atau memanggil `ApiClient` langsung
+belum punya widget test — itu butuh dependency injection untuk
+`ApiClient` yang belum ada, jadi alur end-to-end tetap diverifikasi
+manual lewat browser (lihat riwayat commit) untuk sekarang.
+
 Catatan chart TradingView: widget-nya dimuat lewat `WebView` dengan
 `baseUrl` palsu (`https://nexbit.app`) di
 `lib/features/trading/presentation/widgets/tradingview_chart.dart` —
