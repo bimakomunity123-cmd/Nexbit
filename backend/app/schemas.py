@@ -54,6 +54,13 @@ class PositionOut(BaseModel):
         from_attributes = True
 
 
+class FuturesDepositRequest(BaseModel):
+    # A demo "add virtual funds" top-up, not a real payment — see
+    # trading.py's deposit() route docstring. Bounded per-request (not
+    # a lifetime cap) purely to reject absurd/overflow-shaped numbers.
+    amount: float = Field(gt=0, le=1_000_000)
+
+
 class OpenPositionRequest(BaseModel):
     # Letters/digits only — not because contract ids need to be validated
     # against the real list (this demo doesn't maintain one server-side),
@@ -117,6 +124,13 @@ class CreateSpotOrderRequest(BaseModel):
     # absurd/overflow-shaped numbers, not to model real price limits.
     price: float = Field(gt=0, le=100_000_000_000)
     amount: float = Field(gt=0, le=1_000_000)
+
+
+class SpotDepositRequest(BaseModel):
+    # A demo "add virtual funds" top-up, not a real payment — see
+    # spot.py's deposit() route docstring. Bounded per-request (not a
+    # lifetime cap) purely to reject absurd/overflow-shaped numbers.
+    amount: float = Field(gt=0, le=1_000_000_000)
 
 
 class StakingHoldingOut(BaseModel):

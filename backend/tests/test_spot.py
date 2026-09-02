@@ -26,6 +26,36 @@ class TestWallet:
         assert resp.status_code == 401
 
 
+class TestDeposit:
+    def test_deposit_credits_wallet(self, client):
+        token, _ = register_and_login(client, email="spotdeposit@example.com")
+        resp = client.post("/spot/deposit", json={"amount": 1_000_000}, headers=auth_headers(token))
+        assert resp.status_code == 200
+        assert resp.get_json()["idr_balance"] == 51_000_000.0
+
+    def test_deposit_accumulates_across_multiple_calls(self, client):
+        token, _ = register_and_login(client, email="spotdepositmulti@example.com")
+        client.post("/spot/deposit", json={"amount": 100}, headers=auth_headers(token))
+        resp = client.post("/spot/deposit", json={"amount": 200}, headers=auth_headers(token))
+        assert resp.get_json()["idr_balance"] == 50_000_300.0
+
+    def test_deposit_zero_or_negative_rejected(self, client):
+        token, _ = register_and_login(client, email="spotdepositzero@example.com")
+        resp = client.post("/spot/deposit", json={"amount": 0}, headers=auth_headers(token))
+        assert resp.status_code == 422
+        resp = client.post("/spot/deposit", json={"amount": -1}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_deposit_absurdly_large_amount_rejected(self, client):
+        token, _ = register_and_login(client, email="spotdeposithuge@example.com")
+        resp = client.post("/spot/deposit", json={"amount": 1e20}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_deposit_without_token_rejected(self, client):
+        resp = client.post("/spot/deposit", json={"amount": 100})
+        assert resp.status_code == 401
+
+
 class TestHoldings:
     def test_holdings_empty_for_new_user(self, client):
         token, _ = register_and_login(client, email="noholdings@example.com")

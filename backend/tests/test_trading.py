@@ -29,6 +29,36 @@ class TestAccount:
         assert resp.status_code == 401
 
 
+class TestDeposit:
+    def test_deposit_credits_balance(self, client):
+        token, _ = register_and_login(client, email="deposit@example.com")
+        resp = client.post("/trading/deposit", json={"amount": 500}, headers=auth_headers(token))
+        assert resp.status_code == 200
+        assert resp.get_json()["balance"] == 1750.0
+
+    def test_deposit_accumulates_across_multiple_calls(self, client):
+        token, _ = register_and_login(client, email="depositmulti@example.com")
+        client.post("/trading/deposit", json={"amount": 100}, headers=auth_headers(token))
+        resp = client.post("/trading/deposit", json={"amount": 250}, headers=auth_headers(token))
+        assert resp.get_json()["balance"] == 1600.0
+
+    def test_deposit_zero_or_negative_rejected(self, client):
+        token, _ = register_and_login(client, email="depositzero@example.com")
+        resp = client.post("/trading/deposit", json={"amount": 0}, headers=auth_headers(token))
+        assert resp.status_code == 422
+        resp = client.post("/trading/deposit", json={"amount": -5}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_deposit_absurdly_large_amount_rejected(self, client):
+        token, _ = register_and_login(client, email="deposithuge@example.com")
+        resp = client.post("/trading/deposit", json={"amount": 1e10}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_deposit_without_token_rejected(self, client):
+        resp = client.post("/trading/deposit", json={"amount": 100})
+        assert resp.status_code == 401
+
+
 class TestOpenPosition:
     def test_open_position_success(self, client):
         token, _ = register_and_login(client, email="openpos@example.com")

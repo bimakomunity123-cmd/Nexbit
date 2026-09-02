@@ -4,7 +4,7 @@ from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import Account, Position
 from ..rate_limit import limiter
-from ..schemas import AccountOut, ClosePositionRequest, OpenPositionRequest, PositionOut
+from ..schemas import AccountOut, ClosePositionRequest, FuturesDepositRequest, OpenPositionRequest, PositionOut
 
 trading_bp = Blueprint("trading", __name__, url_prefix="/trading")
 
@@ -29,6 +29,33 @@ def get_account():
         if user is None:
             return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
         account = _get_or_create_account(db, user.id)
+        return jsonify(AccountOut.model_validate(account).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@trading_bp.post("/deposit")
+@limiter.limit("10 per hour")
+def deposit():
+    """Adds virtual funds to the demo Futures margin balance — a "top
+    up" button, not a real payment: there's no card/bank flow behind
+    it, just crediting Account.balance directly. A real product would
+    never let a client-facing endpoint mint balance like this; this
+    exists only because there's no other way to get funds into the
+    demo account at all otherwise (new users start at a fixed 1250.0 —
+    see Account's docstring in models.py).
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        body = FuturesDepositRequest.model_validate(request.get_json(force=True, silent=False) or {})
+        account = _get_or_create_account(db, user.id)
+        account.balance += body.amount
+        db.commit()
+        db.refresh(account)
         return jsonify(AccountOut.model_validate(account).model_dump(mode="json"))
     finally:
         db.close()

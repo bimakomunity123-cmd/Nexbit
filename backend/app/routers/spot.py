@@ -4,7 +4,7 @@ from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import SpotHolding, SpotOrder, SpotWallet
 from ..rate_limit import limiter
-from ..schemas import CreateSpotOrderRequest, SpotHoldingOut, SpotOrderOut, SpotWalletOut
+from ..schemas import CreateSpotOrderRequest, SpotDepositRequest, SpotHoldingOut, SpotOrderOut, SpotWalletOut
 
 spot_bp = Blueprint("spot", __name__, url_prefix="/spot")
 
@@ -42,6 +42,34 @@ def get_wallet():
         if user is None:
             return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
         wallet = _get_or_create_wallet(db, user.id)
+        return jsonify(SpotWalletOut.model_validate(wallet).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@spot_bp.post("/deposit")
+@limiter.limit("10 per hour")
+def deposit():
+    """Adds virtual funds to the demo Spot IDR wallet — a "top up"
+    button, not a real payment: there's no bank/e-wallet flow behind
+    it, just crediting SpotWallet.idr_balance directly. A real product
+    would never let a client-facing endpoint mint balance like this;
+    this exists only because there's no other way to get funds into
+    the demo wallet at all otherwise (new users start at a fixed
+    50,000,000 — see StakingHolding's docstring-adjacent SpotWallet
+    default in models.py).
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        body = SpotDepositRequest.model_validate(request.get_json(force=True, silent=False) or {})
+        wallet = _get_or_create_wallet(db, user.id)
+        wallet.idr_balance += body.amount
+        db.commit()
+        db.refresh(wallet)
         return jsonify(SpotWalletOut.model_validate(wallet).model_dump(mode="json"))
     finally:
         db.close()
