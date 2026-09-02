@@ -200,13 +200,13 @@ class TestOpenPosition:
 
 
 class TestClosePosition:
-    def test_close_position_updates_realized_pnl_and_removes_position(self, client):
+    def test_close_position_updates_realized_pnl_and_leaves_open_list(self, client):
         token, _ = register_and_login(client, email="closepos@example.com")
         opened = _open_position(client, token).get_json()
 
         resp = client.post(
             f"/trading/positions/{opened['id']}/close",
-            json={"realized_pnl": 42.5},
+            json={"realized_pnl": 42.5, "exit_price": 71000.0},
             headers=auth_headers(token),
         )
         assert resp.status_code == 200
@@ -220,16 +220,39 @@ class TestClosePosition:
         first = _open_position(client, token).get_json()
         second = _open_position(client, token).get_json()
 
-        client.post(f"/trading/positions/{first['id']}/close", json={"realized_pnl": 10}, headers=auth_headers(token))
+        client.post(
+            f"/trading/positions/{first['id']}/close",
+            json={"realized_pnl": 10, "exit_price": 71000.0},
+            headers=auth_headers(token),
+        )
         resp = client.post(
-            f"/trading/positions/{second['id']}/close", json={"realized_pnl": -3}, headers=auth_headers(token)
+            f"/trading/positions/{second['id']}/close",
+            json={"realized_pnl": -3, "exit_price": 69000.0},
+            headers=auth_headers(token),
         )
         assert resp.get_json()["realized_pnl"] == 7
 
     def test_close_nonexistent_position_rejected(self, client):
         token, _ = register_and_login(client, email="noexist@example.com")
         resp = client.post(
-            "/trading/positions/not-a-real-id/close", json={"realized_pnl": 0}, headers=auth_headers(token)
+            "/trading/positions/not-a-real-id/close",
+            json={"realized_pnl": 0, "exit_price": 70000.0},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 404
+
+    def test_close_an_already_closed_position_rejected(self, client):
+        token, _ = register_and_login(client, email="doubleclose@example.com")
+        opened = _open_position(client, token).get_json()
+        client.post(
+            f"/trading/positions/{opened['id']}/close",
+            json={"realized_pnl": 0, "exit_price": 70000.0},
+            headers=auth_headers(token),
+        )
+        resp = client.post(
+            f"/trading/positions/{opened['id']}/close",
+            json={"realized_pnl": 0, "exit_price": 70000.0},
+            headers=auth_headers(token),
         )
         assert resp.status_code == 404
 
@@ -248,7 +271,63 @@ class TestClosePosition:
         opened = _open_position(client, token).get_json()
         resp = client.post(
             f"/trading/positions/{opened['id']}/close",
-            json={"realized_pnl": 1e15},
+            json={"realized_pnl": 1e15, "exit_price": 70000.0},
             headers=auth_headers(token),
         )
         assert resp.status_code == 422
+
+    def test_close_position_missing_exit_price_rejected(self, client):
+        token, _ = register_and_login(client, email="noexitprice@example.com")
+        opened = _open_position(client, token).get_json()
+        resp = client.post(
+            f"/trading/positions/{opened['id']}/close",
+            json={"realized_pnl": 0},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 422
+
+
+class TestPositionHistory:
+    def test_closed_position_appears_in_history(self, client):
+        token, _ = register_and_login(client, email="history@example.com")
+        opened = _open_position(client, token).get_json()
+        client.post(
+            f"/trading/positions/{opened['id']}/close",
+            json={"realized_pnl": 15.0, "exit_price": 71500.0},
+            headers=auth_headers(token),
+        )
+
+        resp = client.get("/trading/positions/history", headers=auth_headers(token))
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert len(body) == 1
+        assert body[0]["id"] == opened["id"]
+        assert body[0]["status"] == "closed"
+        assert body[0]["exit_price"] == 71500.0
+        assert body[0]["realized_pnl"] == 15.0
+        assert body[0]["closed_at"] is not None
+
+    def test_open_position_does_not_appear_in_history(self, client):
+        token, _ = register_and_login(client, email="historyopen@example.com")
+        _open_position(client, token)
+        resp = client.get("/trading/positions/history", headers=auth_headers(token))
+        assert resp.get_json() == []
+
+    def test_history_isolated_per_user(self, client):
+        token_a, _ = register_and_login(client, email="historya@example.com")
+        token_b, _ = register_and_login(client, email="historyb@example.com")
+        opened = _open_position(client, token_a).get_json()
+        client.post(
+            f"/trading/positions/{opened['id']}/close",
+            json={"realized_pnl": 0, "exit_price": 70000.0},
+            headers=auth_headers(token_a),
+        )
+
+        resp_a = client.get("/trading/positions/history", headers=auth_headers(token_a))
+        resp_b = client.get("/trading/positions/history", headers=auth_headers(token_b))
+        assert len(resp_a.get_json()) == 1
+        assert len(resp_b.get_json()) == 0
+
+    def test_history_without_token_rejected(self, client):
+        resp = client.get("/trading/positions/history")
+        assert resp.status_code == 401

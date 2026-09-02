@@ -6,6 +6,7 @@ from flask_limiter.errors import RateLimitExceeded
 from pydantic import ValidationError
 from werkzeug.exceptions import HTTPException
 
+from . import migrations
 from .config import CORS_ORIGIN_REGEX, CORS_ORIGINS
 from .database import Base, engine
 from .rate_limit import limiter
@@ -23,6 +24,10 @@ from .routers.trading import trading_bp
 # Base.metadata before this runs — otherwise those tables would silently
 # never get created.
 Base.metadata.create_all(bind=engine)
+# Patches columns onto tables that already existed before they were
+# added (create_all above only creates missing tables) — see
+# migrations.py's docstring.
+migrations.run()
 
 app = Flask(__name__)
 CORS(app, origins=[*CORS_ORIGINS, re.compile(CORS_ORIGIN_REGEX)], supports_credentials=True)

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from flask import Blueprint, jsonify, request
 
 from ..auth_helpers import current_user
@@ -38,7 +40,7 @@ def _used_margin(db, user_id: str) -> float:
     user move out. Computed from stored, already-trusted position fields
     (not live prices), unlike the account-card's own margin-ratio display.
     """
-    positions = db.query(Position).filter(Position.user_id == user_id).all()
+    positions = db.query(Position).filter(Position.user_id == user_id, Position.status == "open").all()
     return sum((p.entry_price * p.size) / p.leverage for p in positions)
 
 
@@ -164,7 +166,33 @@ def list_positions():
         user = current_user(db)
         if user is None:
             return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
-        positions = db.query(Position).filter(Position.user_id == user.id).all()
+        positions = (
+            db.query(Position).filter(Position.user_id == user.id, Position.status == "open").all()
+        )
+        return jsonify([PositionOut.model_validate(p).model_dump(mode="json") for p in positions])
+    finally:
+        db.close()
+
+
+@trading_bp.get("/positions/history")
+def list_position_history():
+    """Closed positions — backs the Futures page's Trade History tab
+    (previously always empty; see Position's docstring in models.py for
+    why closing no longer deletes the row). Newest first, capped at 200
+    so a very active demo account never returns an unbounded list.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+        positions = (
+            db.query(Position)
+            .filter(Position.user_id == user.id, Position.status == "closed")
+            .order_by(Position.closed_at.desc())
+            .limit(200)
+            .all()
+        )
         return jsonify([PositionOut.model_validate(p).model_dump(mode="json") for p in positions])
     finally:
         db.close()
@@ -207,13 +235,16 @@ def close_position(position_id: str):
             return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
 
         position = db.get(Position, position_id)
-        if position is None or position.user_id != user.id:
+        if position is None or position.user_id != user.id or position.status != "open":
             return jsonify({"detail": "Posisi tidak ditemukan"}), 404
 
         body = ClosePositionRequest.model_validate(request.get_json(force=True, silent=False) or {})
         account = _get_or_create_account(db, user.id)
         account.realized_pnl += body.realized_pnl
-        db.delete(position)
+        position.status = "closed"
+        position.exit_price = body.exit_price
+        position.realized_pnl = body.realized_pnl
+        position.closed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(account)
         return jsonify(AccountOut.model_validate(account).model_dump(mode="json"))

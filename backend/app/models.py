@@ -42,11 +42,18 @@ class Account(Base):
 
 
 class Position(Base):
-    """One open Futures position. Mirrors lib/features/futures/domain/
-    models/futures_position.dart's FuturesPosition — contract_id refers
-    to that model's static contract lists (FuturesContract isn't itself
-    stored here, just its id), and entry_price/leverage/margin_mode are
-    exactly what the order form already computed client-side.
+    """One Futures position, open or closed. Mirrors lib/features/futures/
+    domain/models/futures_position.dart's FuturesPosition — contract_id
+    refers to that model's static contract lists (FuturesContract isn't
+    itself stored here, just its id), and entry_price/leverage/margin_mode
+    are exactly what the order form already computed client-side.
+
+    Closing a position used to delete this row outright; it's now kept
+    with status='closed' plus exit_price/realized_pnl/closed_at filled
+    in, so the Futures page's Trade History tab (previously always
+    empty — see FuturesPositionsPanel) has real rows to show. list_
+    positions() only returns status='open' rows, so this change is
+    invisible to every existing "open positions" consumer.
     """
     __tablename__ = "positions"
 
@@ -58,7 +65,14 @@ class Position(Base):
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     leverage: Mapped[int] = mapped_column(Integer, nullable=False)
     margin_mode: Mapped[str] = mapped_column(String, default="isolated")
+    status: Mapped[str] = mapped_column(String, default="open")  # 'open' | 'closed'
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Same "trust the client's number" caveat as realized_pnl below —
+    # this is this position's own PnL at close, distinct from Account.
+    # realized_pnl, which keeps a running total across every position.
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class SpotWallet(Base):

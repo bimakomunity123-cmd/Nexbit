@@ -48,7 +48,11 @@ class PositionOut(BaseModel):
     entry_price: float
     leverage: int
     margin_mode: str
+    status: str
+    exit_price: float | None
+    realized_pnl: float | None
     opened_at: datetime
+    closed_at: datetime | None
 
     class Config:
         from_attributes = True
@@ -100,6 +104,10 @@ class ClosePositionRequest(BaseModel):
     # a client-supplied PnL figure. Bounded to a generous-but-finite
     # range for the same reason as OpenPositionRequest's fields above.
     realized_pnl: float = Field(ge=-1_000_000_000, le=1_000_000_000)
+    # The mark price at the moment of closing — same client-trusted
+    # pattern as realized_pnl above. Stored on the position so the Trade
+    # History tab has a real exit price to show.
+    exit_price: float = Field(gt=0, le=1_000_000_000)
 
 
 class SpotWalletOut(BaseModel):
