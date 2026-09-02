@@ -140,4 +140,12 @@ class ApiClient {
   static Future<Map<String, dynamic>> closePosition(String token, String positionId, double realizedPnl) {
     return _postJson('/trading/positions/$positionId/close', {'realized_pnl': realizedPnl}, token: token);
   }
+
+  static Future<Map<String, dynamic>> depositFutures(String token, double amount) {
+    return _postJson('/trading/deposit', {'amount': amount}, token: token);
+  }
+
+  static Future<Map<String, dynamic>> depositSpot(String token, double amount) {
+    return _postJson('/spot/deposit', {'amount': amount}, token: token);
+  }
 }

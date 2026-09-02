@@ -6,6 +6,7 @@ import '../../../../core/i18n/strings.dart';
 import '../../../../core/market_data/live_price_service.dart';
 import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
+import '../../../../core/widgets/amount_input_dialog.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../../auth/presentation/pages/nexbit_register_page.dart';
 import '../../../blog/presentation/pages/nexbit_blog_page.dart';
@@ -205,6 +206,41 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
       return false;
     }
+  }
+
+  void _openDepositDialog() {
+    if (!isLoggedIn.value) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.depositLoginRequiredSnack),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: S.navLogin,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NexbitLoginPage())),
+          ),
+        ),
+      );
+      return;
+    }
+    showAmountInputDialog(
+      context: context,
+      title: S.depositFuturesTitle,
+      unit: 'USDT',
+      demoNotice: S.depositDemoNotice,
+      onConfirm: (amount) async {
+        try {
+          final json = await ApiClient.depositFutures(authToken.value, amount);
+          if (!mounted) return null;
+          setState(() => _balance = (json['balance'] as num).toDouble());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(S.depositSuccessSnack), duration: const Duration(seconds: 2)),
+          );
+          return null;
+        } on ApiException catch (e) {
+          return e.message;
+        }
+      },
+    );
   }
 
   void _selectAssetClass(FuturesAssetClass assetClass) {
@@ -513,6 +549,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           startingBalance: _balance,
           realizedPnl: _realizedPnl,
           loading: _loadingAccount,
+          onDeposit: _openDepositDialog,
         ),
         const SizedBox(height: 16),
         FuturesContractDetailsCard(contract: selected),

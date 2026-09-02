@@ -6,6 +6,8 @@ import '../../../../core/i18n/strings.dart';
 import '../../../../core/market_data/live_price_service.dart';
 import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
+import '../../../../core/widgets/amount_input_dialog.dart';
+import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../domain/models/spot_order.dart';
 import '../../domain/models/trading_pair.dart';
 import '../widgets/trading_topbar.dart';
@@ -105,6 +107,41 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
   }
 
   double _holdingQuantityOf(String assetId) => _holdingsByAsset[assetId] ?? 0;
+
+  void _openDepositDialog() {
+    if (!isLoggedIn.value) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.depositLoginRequiredSnack),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: S.navLogin,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NexbitLoginPage())),
+          ),
+        ),
+      );
+      return;
+    }
+    showAmountInputDialog(
+      context: context,
+      title: S.depositSpotTitle,
+      unit: 'IDR',
+      demoNotice: S.depositDemoNotice,
+      onConfirm: (amount) async {
+        try {
+          final json = await ApiClient.depositSpot(authToken.value, amount);
+          if (!mounted) return null;
+          setState(() => _idrBalance = (json['idr_balance'] as num).toDouble());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(S.depositSuccessSnack), duration: const Duration(seconds: 2)),
+          );
+          return null;
+        } on ApiException catch (e) {
+          return e.message;
+        }
+      },
+    );
+  }
 
   // Returns whether the order actually went through — OrderFormPanel
   // uses that to decide whether to clear its fields, not to re-derive
@@ -238,6 +275,7 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
           return withLivePrice(pair).base;
         },
         loading: _loadingAccount,
+        onDeposit: _openDepositDialog,
       ),
     );
   }

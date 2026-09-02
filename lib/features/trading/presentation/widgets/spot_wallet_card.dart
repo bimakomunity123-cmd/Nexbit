@@ -25,12 +25,14 @@ class SpotWalletCard extends StatefulWidget {
   /// the default demo balance, which would otherwise flash briefly
   /// before the real figures arrive.
   final bool loading;
+  final VoidCallback onDeposit;
 
   const SpotWalletCard({
     super.key,
     required this.idrBalance,
     required this.holdings,
     required this.priceOf,
+    required this.onDeposit,
     this.loading = false,
   });
 
@@ -72,6 +74,21 @@ class _SpotWalletCardState extends State<SpotWalletCard> {
           const SizedBox(height: 14),
           _row(S.spotWalletBalance, fmt(widget.idrBalance)),
           _row(S.spotWalletPortfolioValue, fmt(portfolioValue)),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: widget.onDeposit,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: NexbitColors.text,
+                side: const BorderSide(color: NexbitColors.line),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                textStyle: NexbitText.body(fontSize: 12, weight: FontWeight.w600),
+              ),
+              child: Text(S.futuresDeposit),
+            ),
+          ),
           const SizedBox(height: 10),
           const Divider(height: 1, color: NexbitColors.lineSoft),
           const SizedBox(height: 10),

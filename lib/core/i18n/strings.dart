@@ -765,6 +765,20 @@ class S {
   static String get futuresExchange => _t('Tukar', 'Exchange');
   static String get futuresBuy => _t('Beli', 'Buy');
   static String get futuresComingSoonSnack => _t('Fitur ini segera hadir', 'This feature is coming soon');
+
+  // ---------------------------------------------------------------------
+  // Deposit dialog (Futures balance / Spot wallet top-up)
+  // ---------------------------------------------------------------------
+  static String get depositFuturesTitle => _t('Deposit Saldo Futures', 'Deposit Futures Balance');
+  static String get depositSpotTitle => _t('Deposit Saldo Spot', 'Deposit Spot Balance');
+  static String get depositAmountRequired => _t('Jumlah harus lebih dari 0', 'Amount must be greater than 0');
+  static String get depositDemoNotice => _t(
+        'Mode Demo: ini menambah saldo virtual secara langsung, bukan pembayaran sungguhan.',
+        "Demo Mode: this adds virtual balance directly, it's not a real payment.",
+      );
+  static String get depositSuccessSnack => _t('Deposit berhasil', 'Deposit successful');
+  static String get depositLoginRequiredSnack =>
+      _t('Masuk dulu untuk melakukan deposit', 'Log in first to make a deposit');
   static String get futuresContractDetails => _t('Detail Kontrak', 'Contract Details');
   static String get futuresExpirationDate => _t('Tanggal Kedaluwarsa', 'Expiration Date');
   static String get futuresPerpetualValue => _t('Perpetual', 'Perpetual');

@@ -16,6 +16,10 @@ class FuturesAccountInfoCard extends StatefulWidget {
   /// placeholders instead of startingBalance's default figures, which
   /// would otherwise flash briefly before the real numbers arrive.
   final bool loading;
+  /// Called when Deposit is tapped — the only one of the three action
+  /// buttons that's actually wired up (see NexbitFuturesPage); Exchange
+  /// and Buy still show the generic "coming soon" snackbar.
+  final VoidCallback? onDeposit;
 
   const FuturesAccountInfoCard({
     super.key,
@@ -24,6 +28,7 @@ class FuturesAccountInfoCard extends StatefulWidget {
     this.startingBalance = 1250.0,
     this.realizedPnl = 0,
     this.loading = false,
+    this.onDeposit,
   });
 
   @override
@@ -97,7 +102,7 @@ class _FuturesAccountInfoCardState extends State<FuturesAccountInfoCard> {
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(child: _actionButton(context, S.futuresDeposit)),
+              Expanded(child: _actionButton(context, S.futuresDeposit, onTap: widget.onDeposit)),
               const SizedBox(width: 8),
               Expanded(child: _actionButton(context, S.futuresExchange)),
               const SizedBox(width: 8),
@@ -109,11 +114,12 @@ class _FuturesAccountInfoCardState extends State<FuturesAccountInfoCard> {
     );
   }
 
-  Widget _actionButton(BuildContext context, String label, {bool filled = false}) {
+  Widget _actionButton(BuildContext context, String label, {bool filled = false, VoidCallback? onTap}) {
     return OutlinedButton(
-      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(S.futuresComingSoonSnack), duration: const Duration(seconds: 2)),
-      ),
+      onPressed: onTap ??
+          () => ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(S.futuresComingSoonSnack), duration: const Duration(seconds: 2)),
+              ),
       style: OutlinedButton.styleFrom(
         backgroundColor: filled ? NexbitColors.accent : Colors.transparent,
         foregroundColor: filled ? const Color(0xFF04120E) : NexbitColors.text,
