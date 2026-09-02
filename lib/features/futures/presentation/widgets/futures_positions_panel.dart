@@ -14,12 +14,17 @@ class FuturesPositionsPanel extends StatefulWidget {
   final List<FuturesPosition> positions;
   final double Function(String contractId) markPriceOf;
   final ValueChanged<FuturesPosition> onClose;
+  /// Closed positions for the Trade History tab — empty for a guest
+  /// (never fetched) or while a logged-in user's history is still
+  /// loading, same as every other list this app fetches post-login.
+  final List<ClosedFuturesPosition> closedPositions;
 
   const FuturesPositionsPanel({
     super.key,
     required this.positions,
     required this.markPriceOf,
     required this.onClose,
+    this.closedPositions = const [],
   });
 
   @override
@@ -84,18 +89,7 @@ class _FuturesPositionsPanelState extends State<FuturesPositionsPanel> {
                 ],
                 emptyLabel: S.futuresNoHistory,
               ),
-            _PosTab.tradeHistory => _headerOnlyTable(
-                columns: [
-                  S.futuresColTime,
-                  S.futuresColSymbol,
-                  S.futuresColSide,
-                  S.futuresColPrice,
-                  S.futuresColAmount,
-                  S.futuresColFee,
-                  S.futuresColPnl,
-                ],
-                emptyLabel: S.futuresNoHistory,
-              ),
+            _PosTab.tradeHistory => _tradeHistoryTable(),
           },
         ],
       ),
@@ -238,6 +232,84 @@ class _FuturesPositionsPanelState extends State<FuturesPositionsPanel> {
               ),
               child: Text(S.futuresClose, style: NexbitText.body(fontSize: 11.5)),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tradeHistoryTable() {
+    if (widget.closedPositions.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(28),
+        child: Center(child: Text(S.futuresNoHistory, style: NexbitText.body(fontSize: 12.5, color: NexbitColors.muted2))),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const minWidth = 760.0;
+        final columns = [
+          S.futuresColTime,
+          S.futuresColSymbol,
+          S.futuresColSide,
+          S.futuresColPrice,
+          S.futuresColAmount,
+          S.futuresColFee,
+          S.futuresColPnl,
+        ];
+        final table = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(children: [for (final c in columns) _cell(c, flex: 1, header: true)]),
+            ),
+            const Divider(height: 1, color: NexbitColors.lineSoft),
+            for (final p in widget.closedPositions) _tradeHistoryRow(p),
+          ],
+        );
+        if (constraints.maxWidth >= minWidth) return table;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: minWidth, child: table),
+        );
+      },
+    );
+  }
+
+  Widget _tradeHistoryRow(ClosedFuturesPosition p) {
+    final pnlColor = p.realizedPnl >= 0 ? NexbitColors.up : NexbitColors.down;
+    final t = p.closedAt;
+    final time = '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')} '
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          _cell(time, flex: 1, mono: true, color: NexbitColors.muted2),
+          _cell(p.contract.label, flex: 1, bold: true),
+          Expanded(
+            flex: 1,
+            child: Text(
+              p.side == OrderSide.long ? S.futuresLong : S.futuresShort,
+              style: NexbitText.body(
+                fontSize: 11.5,
+                weight: FontWeight.w700,
+                color: p.side == OrderSide.long ? NexbitColors.up : NexbitColors.down,
+              ),
+            ),
+          ),
+          _cell(formatUsdt(p.exitPrice, p.contract.decimals), flex: 1, mono: true),
+          _cell('${p.size.toStringAsFixed(2)} ${p.contract.id}', flex: 1, mono: true),
+          // No fee model anywhere in this demo (see other panels'
+          // docstrings) — shown as 0.00 rather than omitted, so the
+          // column header this table already had isn't left dangling.
+          _cell('0.00 ${p.contract.quote}', flex: 1, mono: true, color: NexbitColors.muted2),
+          _cell(
+            '${p.realizedPnl >= 0 ? '+' : ''}${p.realizedPnl.toStringAsFixed(2)} ${p.contract.quote}',
+            flex: 1,
+            mono: true,
+            color: pnlColor,
           ),
         ],
       ),

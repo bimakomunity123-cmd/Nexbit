@@ -58,3 +58,29 @@ class FuturesPosition {
 
   double get liqPrice => liqPriceFor();
 }
+
+/// One closed Futures position — backs the Trade History tab
+/// (FuturesPositionsPanel). Unlike FuturesPosition, its PnL is a fixed
+/// number frozen at close time (see backend/app/models.py's Position.
+/// realized_pnl), not something recomputed against a live mark price.
+class ClosedFuturesPosition {
+  final String id;
+  final FuturesContract contract;
+  final OrderSide side;
+  final double size;
+  final double entryPrice;
+  final double exitPrice;
+  final double realizedPnl;
+  final DateTime closedAt;
+
+  const ClosedFuturesPosition({
+    required this.id,
+    required this.contract,
+    required this.side,
+    required this.size,
+    required this.entryPrice,
+    required this.exitPrice,
+    required this.realizedPnl,
+    required this.closedAt,
+  });
+}

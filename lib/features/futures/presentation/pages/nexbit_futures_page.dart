@@ -50,6 +50,9 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   // backend); a logged-in user's real positions/balance are fetched from
   // the backend in initState instead — see _loadAccountData.
   late List<FuturesPosition> _positions = isLoggedIn.value ? [] : _seedGuestPosition();
+  // Trade History tab data — stays empty for a guest, same as every
+  // other backend-only list this page has.
+  List<ClosedFuturesPosition> _closedPositions = [];
   double _realizedPnl = 0;
   double _balance = 1250.0;
   // True only while a logged-in user's real balance/positions are still
@@ -94,14 +97,17 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
       final results = await Future.wait([
         ApiClient.getAccount(token),
         ApiClient.getPositions(token),
+        ApiClient.getPositionHistory(token),
       ]);
       final account = results[0] as Map<String, dynamic>;
       final positionsJson = results[1] as List<dynamic>;
+      final historyJson = results[2] as List<dynamic>;
       if (!mounted) return;
       setState(() {
         _balance = (account['balance'] as num).toDouble();
         _realizedPnl = (account['realized_pnl'] as num).toDouble();
         _positions = positionsJson.map((j) => _positionFromJson(j as Map<String, dynamic>)).toList();
+        _closedPositions = historyJson.map((j) => _closedPositionFromJson(j as Map<String, dynamic>)).toList();
         _loadingAccount = false;
       });
     } catch (_) {
@@ -129,6 +135,23 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
     );
   }
 
+  ClosedFuturesPosition _closedPositionFromJson(Map<String, dynamic> json) {
+    final contract = kAllFuturesContracts.firstWhere(
+      (c) => c.id == json['contract_id'],
+      orElse: () => kFuturesCryptoContracts.first,
+    );
+    return ClosedFuturesPosition(
+      id: json['id'] as String,
+      contract: contract,
+      side: json['side'] == 'short' ? OrderSide.short : OrderSide.long,
+      size: (json['size'] as num).toDouble(),
+      entryPrice: (json['entry_price'] as num).toDouble(),
+      exitPrice: (json['exit_price'] as num).toDouble(),
+      realizedPnl: (json['realized_pnl'] as num).toDouble(),
+      closedAt: DateTime.parse(json['closed_at'] as String),
+    );
+  }
+
   // Just triggers a rebuild — build() itself re-derives the live-priced
   // contract fresh every time (see `live` in build()), so a plain
   // setState is enough; no need to mutate _selected here.
@@ -148,18 +171,34 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   }
 
   Future<void> _closePosition(FuturesPosition p) async {
-    final pnl = p.pnl(_markPriceOf(p.contract.id));
+    final exitPrice = _markPriceOf(p.contract.id);
+    final pnl = p.pnl(exitPrice);
 
     // Only a backend-persisted position (id != null) needs a server
     // round-trip — the guest-mode seeded position closes purely locally,
     // same as before this page had a backend at all.
     if (p.id != null) {
       try {
-        final account = await ApiClient.closePosition(authToken.value, p.id!, pnl);
+        final account = await ApiClient.closePosition(authToken.value, p.id!, pnl, exitPrice);
         if (!mounted) return;
         setState(() {
           _realizedPnl = (account['realized_pnl'] as num).toDouble();
           _positions = _positions.where((e) => e != p).toList();
+          // Prepended locally so Trade History reflects the close
+          // immediately, without waiting on a full page reload.
+          _closedPositions = [
+            ClosedFuturesPosition(
+              id: p.id!,
+              contract: p.contract,
+              side: p.side,
+              size: p.size,
+              entryPrice: p.entryPrice,
+              exitPrice: exitPrice,
+              realizedPnl: pnl,
+              closedAt: DateTime.now(),
+            ),
+            ..._closedPositions,
+          ];
         });
       } on ApiException catch (e) {
         if (!mounted) return;
@@ -569,7 +608,12 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           ),
         ),
         const SizedBox(height: 16),
-        FuturesPositionsPanel(positions: _positions, markPriceOf: _markPriceOf, onClose: _closePosition),
+        FuturesPositionsPanel(
+          positions: _positions,
+          markPriceOf: _markPriceOf,
+          onClose: _closePosition,
+          closedPositions: _closedPositions,
+        ),
       ],
     );
   }

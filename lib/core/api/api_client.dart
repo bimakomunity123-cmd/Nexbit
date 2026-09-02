@@ -133,12 +133,24 @@ class ApiClient {
 
   static Future<List<dynamic>> getPositions(String token) => _getList('/trading/positions', token: token);
 
+  /// Closed positions, newest first — backs the Trade History tab.
+  static Future<List<dynamic>> getPositionHistory(String token) => _getList('/trading/positions/history', token: token);
+
   static Future<Map<String, dynamic>> openPosition(String token, Map<String, dynamic> body) {
     return _postJson('/trading/positions', body, token: token);
   }
 
-  static Future<Map<String, dynamic>> closePosition(String token, String positionId, double realizedPnl) {
-    return _postJson('/trading/positions/$positionId/close', {'realized_pnl': realizedPnl}, token: token);
+  static Future<Map<String, dynamic>> closePosition(
+    String token,
+    String positionId,
+    double realizedPnl,
+    double exitPrice,
+  ) {
+    return _postJson(
+      '/trading/positions/$positionId/close',
+      {'realized_pnl': realizedPnl, 'exit_price': exitPrice},
+      token: token,
+    );
   }
 
   static Future<Map<String, dynamic>> depositFutures(String token, double amount) {
