@@ -59,6 +59,95 @@ class TestDeposit:
         assert resp.status_code == 401
 
 
+class TestExchange:
+    def test_exchange_to_futures_moves_balance_both_ways(self, client):
+        token, _ = register_and_login(client, email="exchangein@example.com")
+        # Spot starts at 50,000,000 IDR, Futures at 1250.0 USDT.
+        resp = client.post(
+            "/trading/exchange/to-futures",
+            json={"idr_amount": 15_000_000, "rate": 15_000},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["spot_wallet"]["idr_balance"] == 35_000_000
+        assert body["futures_account"]["balance"] == 2250.0
+
+    def test_exchange_to_spot_moves_balance_both_ways(self, client):
+        token, _ = register_and_login(client, email="exchangeout@example.com")
+        resp = client.post(
+            "/trading/exchange/to-spot",
+            json={"usdt_amount": 250, "rate": 15_000},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["futures_account"]["balance"] == 1000.0
+        assert body["spot_wallet"]["idr_balance"] == 53_750_000
+
+    def test_exchange_to_futures_insufficient_spot_balance_rejected(self, client):
+        token, _ = register_and_login(client, email="exchangeinshort@example.com")
+        resp = client.post(
+            "/trading/exchange/to-futures",
+            json={"idr_amount": 999_999_999, "rate": 15_000},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 400
+
+    def test_exchange_to_spot_insufficient_futures_balance_rejected(self, client):
+        token, _ = register_and_login(client, email="exchangeoutshort@example.com")
+        resp = client.post(
+            "/trading/exchange/to-spot",
+            json={"usdt_amount": 999_999, "rate": 15_000},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 400
+
+    def test_exchange_to_spot_floored_by_used_margin(self, client):
+        token, _ = register_and_login(client, email="exchangemargin@example.com")
+        # Opens a position that locks up 700 USDT of margin (7000 notional
+        # / 10x leverage), leaving only 550 of the 1250 starting balance
+        # actually available to move out.
+        _open_position(client, token, size=0.1, entry_price=70_000.0, leverage=10)
+        resp = client.post(
+            "/trading/exchange/to-spot",
+            json={"usdt_amount": 600, "rate": 15_000},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 400
+
+        resp = client.post(
+            "/trading/exchange/to-spot",
+            json={"usdt_amount": 500, "rate": 15_000},
+            headers=auth_headers(token),
+        )
+        assert resp.status_code == 200
+
+    def test_exchange_zero_or_negative_amount_rejected(self, client):
+        token, _ = register_and_login(client, email="exchangezero@example.com")
+        resp = client.post(
+            "/trading/exchange/to-futures", json={"idr_amount": 0, "rate": 15_000}, headers=auth_headers(token)
+        )
+        assert resp.status_code == 422
+        resp = client.post(
+            "/trading/exchange/to-spot", json={"usdt_amount": -5, "rate": 15_000}, headers=auth_headers(token)
+        )
+        assert resp.status_code == 422
+
+    def test_exchange_invalid_rate_rejected(self, client):
+        token, _ = register_and_login(client, email="exchangerate@example.com")
+        resp = client.post(
+            "/trading/exchange/to-futures", json={"idr_amount": 100_000, "rate": 0}, headers=auth_headers(token)
+        )
+        assert resp.status_code == 422
+
+    def test_exchange_without_token_rejected(self, client):
+        resp = client.post("/trading/exchange/to-futures", json={"idr_amount": 100_000, "rate": 15_000})
+        assert resp.status_code == 401
+        resp = client.post("/trading/exchange/to-spot", json={"usdt_amount": 100, "rate": 15_000})
+        assert resp.status_code == 401
+
+
 class TestOpenPosition:
     def test_open_position_success(self, client):
         token, _ = register_and_login(client, email="openpos@example.com")

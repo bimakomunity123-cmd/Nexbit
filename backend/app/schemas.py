@@ -61,6 +61,23 @@ class FuturesDepositRequest(BaseModel):
     amount: float = Field(gt=0, le=1_000_000)
 
 
+class ExchangeToFuturesRequest(BaseModel):
+    # Moves Spot IDR balance into Futures USDT margin — see trading.py's
+    # exchange_to_futures() route docstring. `rate` is the client's
+    # current IDR-per-USDT quote (LivePriceService's USDT price); same
+    # "trust the client's live price" pattern as Spot's order price and
+    # Futures' realized PnL. Bounds are generous, just enough to reject
+    # absurd/overflow-shaped numbers.
+    idr_amount: float = Field(gt=0, le=1_000_000_000)
+    rate: float = Field(gt=0, le=100_000)
+
+
+class ExchangeToSpotRequest(BaseModel):
+    # The reverse direction — see ExchangeToFuturesRequest above.
+    usdt_amount: float = Field(gt=0, le=1_000_000)
+    rate: float = Field(gt=0, le=100_000)
+
+
 class OpenPositionRequest(BaseModel):
     # Letters/digits only — not because contract ids need to be validated
     # against the real list (this demo doesn't maintain one server-side),

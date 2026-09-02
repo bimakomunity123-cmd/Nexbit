@@ -4,7 +4,17 @@ from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import Account, Position
 from ..rate_limit import limiter
-from ..schemas import AccountOut, ClosePositionRequest, FuturesDepositRequest, OpenPositionRequest, PositionOut
+from ..schemas import (
+    AccountOut,
+    ClosePositionRequest,
+    ExchangeToFuturesRequest,
+    ExchangeToSpotRequest,
+    FuturesDepositRequest,
+    OpenPositionRequest,
+    PositionOut,
+    SpotWalletOut,
+)
+from .spot import _get_or_create_wallet
 
 trading_bp = Blueprint("trading", __name__, url_prefix="/trading")
 
@@ -19,6 +29,17 @@ def _get_or_create_account(db, user_id: str) -> Account:
         db.commit()
         db.refresh(account)
     return account
+
+
+def _used_margin(db, user_id: str) -> float:
+    """Sum of every open position's margin (entry_price * size / leverage
+    — same formula as FuturesPosition.margin on the Flutter side), used
+    to floor how much of the Futures balance exchange_to_spot() lets a
+    user move out. Computed from stored, already-trusted position fields
+    (not live prices), unlike the account-card's own margin-ratio display.
+    """
+    positions = db.query(Position).filter(Position.user_id == user_id).all()
+    return sum((p.entry_price * p.size) / p.leverage for p in positions)
 
 
 @trading_bp.get("/account")
@@ -57,6 +78,81 @@ def deposit():
         db.commit()
         db.refresh(account)
         return jsonify(AccountOut.model_validate(account).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+def _exchange_response(wallet, account):
+    return {
+        "spot_wallet": SpotWalletOut.model_validate(wallet).model_dump(mode="json"),
+        "futures_account": AccountOut.model_validate(account).model_dump(mode="json"),
+    }
+
+
+@trading_bp.post("/exchange/to-futures")
+@limiter.limit("60 per minute")
+def exchange_to_futures():
+    """The Exchange button's Spot→Futures direction: moves IDR out of the
+    demo Spot wallet and credits the equivalent USDT to the Futures
+    margin balance. `rate` is the client's current IDR-per-USDT quote
+    (LivePriceService's USDT price) — trusted the same way Spot's order
+    price and Futures' realized PnL already are, since this demo has no
+    market-data feed of its own server-side. Unlike deposit(), this
+    doesn't mint money — it just moves it between the two demo ledgers,
+    both updated in the same commit so a failure can't credit one side
+    without debiting the other.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        body = ExchangeToFuturesRequest.model_validate(request.get_json(force=True, silent=False) or {})
+        wallet = _get_or_create_wallet(db, user.id)
+        if body.idr_amount > wallet.idr_balance:
+            return jsonify({"detail": "Saldo Spot tidak cukup"}), 400
+
+        account = _get_or_create_account(db, user.id)
+        wallet.idr_balance -= body.idr_amount
+        account.balance += body.idr_amount / body.rate
+        db.commit()
+        db.refresh(wallet)
+        db.refresh(account)
+        return jsonify(_exchange_response(wallet, account))
+    finally:
+        db.close()
+
+
+@trading_bp.post("/exchange/to-spot")
+@limiter.limit("60 per minute")
+def exchange_to_spot():
+    """The reverse direction — Futures USDT margin into Spot IDR balance.
+    Floored by balance + realized_pnl - used_margin, deliberately
+    ignoring unrealized PnL (which depends on live mark prices only the
+    client has — same caveat FuturesAccountInfoCard's own available-
+    balance figure carries). A demo-acceptable approximation, not the
+    precise margin check a real exchange would enforce.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        body = ExchangeToSpotRequest.model_validate(request.get_json(force=True, silent=False) or {})
+        account = _get_or_create_account(db, user.id)
+        available = account.balance + account.realized_pnl - _used_margin(db, user.id)
+        if body.usdt_amount > available:
+            return jsonify({"detail": "Saldo Futures tidak cukup"}), 400
+
+        wallet = _get_or_create_wallet(db, user.id)
+        account.balance -= body.usdt_amount
+        wallet.idr_balance += body.usdt_amount * body.rate
+        db.commit()
+        db.refresh(wallet)
+        db.refresh(account)
+        return jsonify(_exchange_response(wallet, account))
     finally:
         db.close()
 
