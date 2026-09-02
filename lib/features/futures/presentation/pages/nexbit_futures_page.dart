@@ -7,6 +7,7 @@ import '../../../../core/market_data/live_price_service.dart';
 import '../../../../core/market_data/live_pricing.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../../core/widgets/amount_input_dialog.dart';
+import '../../../../core/widgets/exchange_dialog.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../../auth/presentation/pages/nexbit_register_page.dart';
 import '../../../blog/presentation/pages/nexbit_blog_page.dart';
@@ -234,6 +235,53 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           setState(() => _balance = (json['balance'] as num).toDouble());
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(S.depositSuccessSnack), duration: const Duration(seconds: 2)),
+          );
+          return null;
+        } on ApiException catch (e) {
+          return e.message;
+        }
+      },
+    );
+  }
+
+  void _openExchangeDialog() {
+    if (!isLoggedIn.value) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.exchangeLoginRequiredSnack),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: S.navLogin,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NexbitLoginPage())),
+          ),
+        ),
+      );
+      return;
+    }
+    showExchangeDialog(
+      context: context,
+      onExchangeToFutures: (idrAmount, rate) async {
+        try {
+          final json = await ApiClient.exchangeToFutures(authToken.value, idrAmount, rate);
+          if (!mounted) return null;
+          final account = json['futures_account'] as Map<String, dynamic>;
+          setState(() => _balance = (account['balance'] as num).toDouble());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(S.exchangeSuccessSnack), duration: const Duration(seconds: 2)),
+          );
+          return null;
+        } on ApiException catch (e) {
+          return e.message;
+        }
+      },
+      onExchangeToSpot: (usdtAmount, rate) async {
+        try {
+          final json = await ApiClient.exchangeToSpot(authToken.value, usdtAmount, rate);
+          if (!mounted) return null;
+          final account = json['futures_account'] as Map<String, dynamic>;
+          setState(() => _balance = (account['balance'] as num).toDouble());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(S.exchangeSuccessSnack), duration: const Duration(seconds: 2)),
           );
           return null;
         } on ApiException catch (e) {
@@ -550,6 +598,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           realizedPnl: _realizedPnl,
           loading: _loadingAccount,
           onDeposit: _openDepositDialog,
+          onExchange: _openExchangeDialog,
         ),
         const SizedBox(height: 16),
         FuturesContractDetailsCard(contract: selected),

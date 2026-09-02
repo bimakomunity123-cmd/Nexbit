@@ -81,3 +81,20 @@ double approxUsdPriceFor(String assetId) {
   if (live != null) return live.priceUsd;
   return _kApproxUsdPriceFallback[assetId] ?? 0;
 }
+
+/// Fallback IDR-per-USDT rate for when [LivePriceService] hasn't loaded
+/// yet — a mid-2020s ballpark, purely cosmetic (only used if the live
+/// feed is unavailable), never treated as a real FX quote.
+const _kApproxIdrPerUsdtFallback = 15600.0;
+
+/// Best-effort IDR-per-USDT exchange rate, used by the Spot<->Futures
+/// Exchange dialog to convert between the two wallets' different quote
+/// currencies. USDT's own live IDR price (from [LivePriceService]) IS
+/// the IDR/USD rate, since USDT tracks USD ~1:1 — same "trust the live
+/// feed, fall back to a fixed approximation" pattern as
+/// [approxUsdPriceFor].
+double approxIdrPerUsdt() {
+  final live = LivePriceService.prices.value['USDT'];
+  if (live != null && live.priceIdr > 0) return live.priceIdr;
+  return _kApproxIdrPerUsdtFallback;
+}

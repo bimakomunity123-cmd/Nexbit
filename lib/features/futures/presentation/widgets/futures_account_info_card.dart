@@ -16,10 +16,12 @@ class FuturesAccountInfoCard extends StatefulWidget {
   /// placeholders instead of startingBalance's default figures, which
   /// would otherwise flash briefly before the real numbers arrive.
   final bool loading;
-  /// Called when Deposit is tapped — the only one of the three action
-  /// buttons that's actually wired up (see NexbitFuturesPage); Exchange
-  /// and Buy still show the generic "coming soon" snackbar.
+  /// Called when Deposit is tapped (see NexbitFuturesPage). Buy still
+  /// shows the generic "coming soon" snackbar.
   final VoidCallback? onDeposit;
+  /// Called when Exchange is tapped — opens the Spot<->Futures Exchange
+  /// dialog (see NexbitFuturesPage).
+  final VoidCallback? onExchange;
 
   const FuturesAccountInfoCard({
     super.key,
@@ -29,6 +31,7 @@ class FuturesAccountInfoCard extends StatefulWidget {
     this.realizedPnl = 0,
     this.loading = false,
     this.onDeposit,
+    this.onExchange,
   });
 
   @override
@@ -104,7 +107,7 @@ class _FuturesAccountInfoCardState extends State<FuturesAccountInfoCard> {
             children: [
               Expanded(child: _actionButton(context, S.futuresDeposit, onTap: widget.onDeposit)),
               const SizedBox(width: 8),
-              Expanded(child: _actionButton(context, S.futuresExchange)),
+              Expanded(child: _actionButton(context, S.futuresExchange, onTap: widget.onExchange)),
               const SizedBox(width: 8),
               Expanded(child: _actionButton(context, S.futuresBuy, filled: true)),
             ],

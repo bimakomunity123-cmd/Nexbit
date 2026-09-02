@@ -779,6 +779,24 @@ class S {
   static String get depositSuccessSnack => _t('Deposit berhasil', 'Deposit successful');
   static String get depositLoginRequiredSnack =>
       _t('Masuk dulu untuk melakukan deposit', 'Log in first to make a deposit');
+
+  // ---------------------------------------------------------------------
+  // Exchange dialog (move balance between Spot wallet and Futures margin)
+  // ---------------------------------------------------------------------
+  static String get exchangeTitle => _t('Tukar Saldo', 'Exchange Balance');
+  static String get exchangeToFutures => _t('Spot → Futures', 'Spot → Futures');
+  static String get exchangeToSpot => _t('Futures → Spot', 'Futures → Spot');
+  static String get exchangeFrom => _t('Dari', 'From');
+  static String get exchangeTo => _t('Ke', 'To');
+  static String get exchangeYouReceive => _t('Anda menerima', 'You receive');
+  static String get exchangeRateNotice => _t(
+        'Kurs mengikuti harga USDT/IDR yang berjalan (live).',
+        'Rate follows the live USDT/IDR price.',
+      );
+  static String get exchangeAmountRequired => _t('Jumlah harus lebih dari 0', 'Amount must be greater than 0');
+  static String get exchangeSuccessSnack => _t('Tukar saldo berhasil', 'Exchange successful');
+  static String get exchangeLoginRequiredSnack =>
+      _t('Masuk dulu untuk menukar saldo', 'Log in first to exchange balance');
   static String get futuresContractDetails => _t('Detail Kontrak', 'Contract Details');
   static String get futuresExpirationDate => _t('Tanggal Kedaluwarsa', 'Expiration Date');
   static String get futuresPerpetualValue => _t('Perpetual', 'Perpetual');
