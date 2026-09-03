@@ -192,6 +192,30 @@ class StakingPosition(Base):
     unstaked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class KycVerification(Base):
+    """A demo "know your customer" identity check. IMPORTANT: this is
+    NOT real identity verification — full_name/id_number are never
+    checked against any government registry (Dukcapil or otherwise),
+    only validated as plausibly-shaped input (see schemas.py); the
+    Flutter UI explicitly tells users not to enter real personal
+    information. One submission per user, ever (no resubmit/reject
+    flow — kept intentionally minimal).
+
+    Status is derived rather than stored: no row for a user means
+    'unverified'; a row younger than routers/kyc.py's _REVIEW_DELAY
+    means 'pending'; older means 'verified'. This needs no cron/
+    background job — the delay is just computed against submitted_at
+    whenever status is read. Replaces what used to be a hardcoded,
+    permanently-on "Verified" badge on the Profile page.
+    """
+    __tablename__ = "kyc_verifications"
+
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), primary_key=True)
+    full_name: Mapped[str] = mapped_column(String, nullable=False)
+    id_number: Mapped[str] = mapped_column(String, nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class PasswordReset(Base):
     """A one-time password-reset token. IMPORTANT demo compromise: this
     app has no outbound email service configured (PythonAnywhere's free

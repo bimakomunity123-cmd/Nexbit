@@ -228,3 +228,20 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=8, max_length=72)
+
+
+class KycStatusOut(BaseModel):
+    status: Literal["unverified", "pending", "verified"]
+    full_name: str | None = None
+    id_number: str | None = None
+    submitted_at: datetime | None = None
+
+
+class SubmitKycRequest(BaseModel):
+    # Demo-only — never checked against a real identity registry (see
+    # KycVerification's docstring in models.py). These are shape checks,
+    # not real validation; the Flutter UI tells users not to enter real
+    # personal information here.
+    full_name: str = Field(min_length=1, max_length=100)
+    # 16 digits, loosely matching an Indonesian NIK's shape.
+    id_number: str = Field(pattern=r"^\d{16}$")
