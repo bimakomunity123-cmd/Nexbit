@@ -262,18 +262,33 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
       );
       return;
     }
-    showAmountInputDialog(
+    showDepositWithdrawDialog(
       context: context,
-      title: S.depositFuturesTitle,
+      depositTitle: S.depositFuturesTitle,
+      withdrawTitle: S.withdrawFuturesTitle,
       unit: 'USDT',
-      demoNotice: S.depositDemoNotice,
-      onConfirm: (amount) async {
+      depositNotice: S.depositDemoNotice,
+      withdrawNotice: S.withdrawDemoNotice,
+      onDeposit: (amount) async {
         try {
           final json = await ApiClient.depositFutures(authToken.value, amount);
           if (!mounted) return null;
           setState(() => _balance = (json['balance'] as num).toDouble());
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(S.depositSuccessSnack), duration: const Duration(seconds: 2)),
+          );
+          return null;
+        } on ApiException catch (e) {
+          return e.message;
+        }
+      },
+      onWithdraw: (amount) async {
+        try {
+          final json = await ApiClient.withdrawFutures(authToken.value, amount);
+          if (!mounted) return null;
+          setState(() => _balance = (json['balance'] as num).toDouble());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(S.withdrawSuccessSnack), duration: const Duration(seconds: 2)),
           );
           return null;
         } on ApiException catch (e) {

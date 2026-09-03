@@ -12,7 +12,7 @@ enum ExchangeDirection { toFutures, toSpot }
 /// margin account, converted at the live IDR/USDT rate (see
 /// live_pricing.dart's approxIdrPerUsdt). Both onConfirm callbacks
 /// return null on success or an error message string on failure — same
-/// pattern as showAmountInputDialog.
+/// pattern as showDepositWithdrawDialog.
 Future<void> showExchangeDialog({
   required BuildContext context,
   required Future<String?> Function(double idrAmount, double rate) onExchangeToFutures,

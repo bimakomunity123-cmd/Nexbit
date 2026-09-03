@@ -161,6 +161,14 @@ class ApiClient {
     return _postJson('/spot/deposit', {'amount': amount}, token: token);
   }
 
+  static Future<Map<String, dynamic>> withdrawFutures(String token, double amount) {
+    return _postJson('/trading/withdraw', {'amount': amount}, token: token);
+  }
+
+  static Future<Map<String, dynamic>> withdrawSpot(String token, double amount) {
+    return _postJson('/spot/withdraw', {'amount': amount}, token: token);
+  }
+
   /// Moves IDR out of the Spot wallet into the Futures margin balance —
   /// the Exchange dialog's Spot→Futures direction. `rate` is the
   /// client's current IDR-per-USDT quote (see live_pricing.dart's

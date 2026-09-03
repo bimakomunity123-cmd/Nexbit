@@ -122,18 +122,33 @@ class _NexbitTradingPageState extends State<NexbitTradingPage> {
       );
       return;
     }
-    showAmountInputDialog(
+    showDepositWithdrawDialog(
       context: context,
-      title: S.depositSpotTitle,
+      depositTitle: S.depositSpotTitle,
+      withdrawTitle: S.withdrawSpotTitle,
       unit: 'IDR',
-      demoNotice: S.depositDemoNotice,
-      onConfirm: (amount) async {
+      depositNotice: S.depositDemoNotice,
+      withdrawNotice: S.withdrawDemoNotice,
+      onDeposit: (amount) async {
         try {
           final json = await ApiClient.depositSpot(authToken.value, amount);
           if (!mounted) return null;
           setState(() => _idrBalance = (json['idr_balance'] as num).toDouble());
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(S.depositSuccessSnack), duration: const Duration(seconds: 2)),
+          );
+          return null;
+        } on ApiException catch (e) {
+          return e.message;
+        }
+      },
+      onWithdraw: (amount) async {
+        try {
+          final json = await ApiClient.withdrawSpot(authToken.value, amount);
+          if (!mounted) return null;
+          setState(() => _idrBalance = (json['idr_balance'] as num).toDouble());
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(S.withdrawSuccessSnack), duration: const Duration(seconds: 2)),
           );
           return null;
         } on ApiException catch (e) {

@@ -781,6 +781,20 @@ class S {
       _t('Masuk dulu untuk melakukan deposit', 'Log in first to make a deposit');
 
   // ---------------------------------------------------------------------
+  // Withdraw (same dialog as Deposit, via the direction toggle)
+  // ---------------------------------------------------------------------
+  static String get withdrawLabel => _t('Tarik', 'Withdraw');
+  static String get withdrawFuturesTitle => _t('Tarik Saldo Futures', 'Withdraw Futures Balance');
+  static String get withdrawSpotTitle => _t('Tarik Saldo Spot', 'Withdraw Spot Balance');
+  static String get withdrawDemoNotice => _t(
+        'Mode Demo: ini mengurangi saldo virtual secara langsung, uangnya tidak benar-benar ditransfer ke mana pun.',
+        "Demo Mode: this removes virtual balance directly, it's not a real payout.",
+      );
+  static String get withdrawSuccessSnack => _t('Penarikan berhasil', 'Withdrawal successful');
+  static String get withdrawLoginRequiredSnack =>
+      _t('Masuk dulu untuk melakukan penarikan', 'Log in first to make a withdrawal');
+
+  // ---------------------------------------------------------------------
   // Exchange dialog (move balance between Spot wallet and Futures margin)
   // ---------------------------------------------------------------------
   static String get exchangeTitle => _t('Tukar Saldo', 'Exchange Balance');
@@ -957,8 +971,8 @@ class S {
       );
   static String get helpFaqQ4 => _t('Bagaimana cara melakukan withdrawal?', 'How do I make a withdrawal?');
   static String get helpFaqA4 => _t(
-        'Fitur withdrawal masih dalam pengembangan untuk demo ini — nantikan pembaruannya.',
-        'The withdrawal feature is still in development for this demo — stay tuned for updates.',
+        'Buka menu Deposit di halaman Futures atau Spot, lalu pilih tab "Tarik". Ingat, ini masih mode demo — saldo yang ditarik adalah saldo virtual, bukan uang sungguhan.',
+        'Open the Deposit dialog on the Futures or Spot page, then switch to the "Withdraw" tab. Note this is still demo mode — the balance withdrawn is virtual, not real money.',
       );
   static String get helpViewAllFaq => _t('Lihat semua FAQ', 'View all FAQ');
   static String get helpContactUs => _t('Hubungi Kami', 'Contact Us');
