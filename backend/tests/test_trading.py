@@ -59,6 +59,52 @@ class TestDeposit:
         assert resp.status_code == 401
 
 
+class TestWithdraw:
+    def test_withdraw_debits_balance(self, client):
+        token, _ = register_and_login(client, email="withdraw@example.com")
+        resp = client.post("/trading/withdraw", json={"amount": 500}, headers=auth_headers(token))
+        assert resp.status_code == 200
+        assert resp.get_json()["balance"] == 750.0
+
+    def test_withdraw_accumulates_across_multiple_calls(self, client):
+        token, _ = register_and_login(client, email="withdrawmulti@example.com")
+        client.post("/trading/withdraw", json={"amount": 100}, headers=auth_headers(token))
+        resp = client.post("/trading/withdraw", json={"amount": 250}, headers=auth_headers(token))
+        assert resp.get_json()["balance"] == 900.0
+
+    def test_withdraw_more_than_balance_rejected(self, client):
+        token, _ = register_and_login(client, email="withdrawtoomuch@example.com")
+        resp = client.post("/trading/withdraw", json={"amount": 2000}, headers=auth_headers(token))
+        assert resp.status_code == 400
+
+    def test_withdraw_floored_by_used_margin(self, client):
+        token, _ = register_and_login(client, email="withdrawmargin@example.com")
+        # Locks up 700 of the starting 1250 as margin (7000 notional /
+        # 10x leverage), leaving only 550 actually withdrawable.
+        _open_position(client, token, size=0.1, entry_price=70_000.0, leverage=10)
+        resp = client.post("/trading/withdraw", json={"amount": 600}, headers=auth_headers(token))
+        assert resp.status_code == 400
+
+        resp = client.post("/trading/withdraw", json={"amount": 500}, headers=auth_headers(token))
+        assert resp.status_code == 200
+
+    def test_withdraw_zero_or_negative_rejected(self, client):
+        token, _ = register_and_login(client, email="withdrawzero@example.com")
+        resp = client.post("/trading/withdraw", json={"amount": 0}, headers=auth_headers(token))
+        assert resp.status_code == 422
+        resp = client.post("/trading/withdraw", json={"amount": -5}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_withdraw_absurdly_large_amount_rejected(self, client):
+        token, _ = register_and_login(client, email="withdrawhuge@example.com")
+        resp = client.post("/trading/withdraw", json={"amount": 1e10}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_withdraw_without_token_rejected(self, client):
+        resp = client.post("/trading/withdraw", json={"amount": 100})
+        assert resp.status_code == 401
+
+
 class TestExchange:
     def test_exchange_to_futures_moves_balance_both_ways(self, client):
         token, _ = register_and_login(client, email="exchangein@example.com")

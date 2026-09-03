@@ -4,7 +4,14 @@ from ..auth_helpers import current_user
 from ..database import SessionLocal
 from ..models import SpotHolding, SpotOrder, SpotWallet
 from ..rate_limit import limiter
-from ..schemas import CreateSpotOrderRequest, SpotDepositRequest, SpotHoldingOut, SpotOrderOut, SpotWalletOut
+from ..schemas import (
+    CreateSpotOrderRequest,
+    SpotDepositRequest,
+    SpotHoldingOut,
+    SpotOrderOut,
+    SpotWalletOut,
+    SpotWithdrawRequest,
+)
 
 spot_bp = Blueprint("spot", __name__, url_prefix="/spot")
 
@@ -68,6 +75,35 @@ def deposit():
         body = SpotDepositRequest.model_validate(request.get_json(force=True, silent=False) or {})
         wallet = _get_or_create_wallet(db, user.id)
         wallet.idr_balance += body.amount
+        db.commit()
+        db.refresh(wallet)
+        return jsonify(SpotWalletOut.model_validate(wallet).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@spot_bp.post("/withdraw")
+@limiter.limit("10 per hour")
+def withdraw():
+    """The reverse of deposit() — removes virtual funds from the demo
+    Spot IDR wallet. Just like deposit() isn't a real payment, this
+    isn't a real payout: there's nowhere for the money to actually go,
+    it's simply debited from SpotWallet.idr_balance. Capped at the
+    current balance — holdings (BTC, ETH, ...) aren't liquidated to
+    cover a shortfall, same as create_order()'s own balance check.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        body = SpotWithdrawRequest.model_validate(request.get_json(force=True, silent=False) or {})
+        wallet = _get_or_create_wallet(db, user.id)
+        if body.amount > wallet.idr_balance:
+            return jsonify({"detail": "Saldo tidak cukup untuk ditarik"}), 400
+
+        wallet.idr_balance -= body.amount
         db.commit()
         db.refresh(wallet)
         return jsonify(SpotWalletOut.model_validate(wallet).model_dump(mode="json"))

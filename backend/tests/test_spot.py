@@ -56,6 +56,41 @@ class TestDeposit:
         assert resp.status_code == 401
 
 
+class TestWithdraw:
+    def test_withdraw_debits_wallet(self, client):
+        token, _ = register_and_login(client, email="spotwithdraw@example.com")
+        resp = client.post("/spot/withdraw", json={"amount": 1_000_000}, headers=auth_headers(token))
+        assert resp.status_code == 200
+        assert resp.get_json()["idr_balance"] == 49_000_000.0
+
+    def test_withdraw_accumulates_across_multiple_calls(self, client):
+        token, _ = register_and_login(client, email="spotwithdrawmulti@example.com")
+        client.post("/spot/withdraw", json={"amount": 100}, headers=auth_headers(token))
+        resp = client.post("/spot/withdraw", json={"amount": 200}, headers=auth_headers(token))
+        assert resp.get_json()["idr_balance"] == 49_999_700.0
+
+    def test_withdraw_more_than_balance_rejected(self, client):
+        token, _ = register_and_login(client, email="spotwithdrawtoomuch@example.com")
+        resp = client.post("/spot/withdraw", json={"amount": 100_000_000}, headers=auth_headers(token))
+        assert resp.status_code == 400
+
+    def test_withdraw_zero_or_negative_rejected(self, client):
+        token, _ = register_and_login(client, email="spotwithdrawzero@example.com")
+        resp = client.post("/spot/withdraw", json={"amount": 0}, headers=auth_headers(token))
+        assert resp.status_code == 422
+        resp = client.post("/spot/withdraw", json={"amount": -1}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_withdraw_absurdly_large_amount_rejected(self, client):
+        token, _ = register_and_login(client, email="spotwithdrawhuge@example.com")
+        resp = client.post("/spot/withdraw", json={"amount": 1e20}, headers=auth_headers(token))
+        assert resp.status_code == 422
+
+    def test_withdraw_without_token_rejected(self, client):
+        resp = client.post("/spot/withdraw", json={"amount": 100})
+        assert resp.status_code == 401
+
+
 class TestHoldings:
     def test_holdings_empty_for_new_user(self, client):
         token, _ = register_and_login(client, email="noholdings@example.com")

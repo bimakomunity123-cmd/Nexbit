@@ -65,6 +65,12 @@ class FuturesDepositRequest(BaseModel):
     amount: float = Field(gt=0, le=1_000_000)
 
 
+class FuturesWithdrawRequest(BaseModel):
+    # The reverse of FuturesDepositRequest — see trading.py's withdraw()
+    # route docstring for the balance floor this is checked against.
+    amount: float = Field(gt=0, le=1_000_000)
+
+
 class ExchangeToFuturesRequest(BaseModel):
     # Moves Spot IDR balance into Futures USDT margin — see trading.py's
     # exchange_to_futures() route docstring. `rate` is the client's
@@ -155,6 +161,12 @@ class SpotDepositRequest(BaseModel):
     # A demo "add virtual funds" top-up, not a real payment — see
     # spot.py's deposit() route docstring. Bounded per-request (not a
     # lifetime cap) purely to reject absurd/overflow-shaped numbers.
+    amount: float = Field(gt=0, le=1_000_000_000)
+
+
+class SpotWithdrawRequest(BaseModel):
+    # The reverse of SpotDepositRequest — see spot.py's withdraw() route
+    # docstring.
     amount: float = Field(gt=0, le=1_000_000_000)
 
 
