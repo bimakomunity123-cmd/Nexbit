@@ -183,4 +183,12 @@ class ApiClient {
   static Future<Map<String, dynamic>> exchangeToSpot(String token, double usdtAmount, double rate) {
     return _postJson('/trading/exchange/to-spot', {'usdt_amount': usdtAmount, 'rate': rate}, token: token);
   }
+
+  // ---- KYC-lite (see backend/app/routers/kyc.py) ----
+
+  static Future<Map<String, dynamic>> getKycStatus(String token) => _getJson('/kyc/status', token: token);
+
+  static Future<Map<String, dynamic>> submitKyc(String token, String fullName, String idNumber) {
+    return _postJson('/kyc/submit', {'full_name': fullName, 'id_number': idNumber}, token: token);
+  }
 }

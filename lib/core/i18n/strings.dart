@@ -27,6 +27,7 @@ class S {
   static String get navLogoutSuccessSnack => _t('Berhasil keluar', 'Logged out successfully');
   static String get navMyProfile => _t('Profil Saya', 'My Profile');
   static String get navSecurity => _t('Keamanan', 'Security');
+  static String get navVerification => _t('Verifikasi', 'Verification');
   static String get navPreferences => _t('Preferensi', 'Preferences');
   static String get navHelp => _t('Bantuan', 'Help');
   static String get navComingSoonSnack => _t('Fitur ini segera hadir', 'This feature is coming soon');
@@ -837,6 +838,9 @@ class S {
   // Profil Saya
   static String get profileHeading => _t('Profil Saya', 'My Profile');
   static String get profileVerifiedBadge => _t('Terverifikasi', 'Verified');
+  static String get profileUnverifiedBadge => _t('Belum Terverifikasi', 'Unverified');
+  static String get profilePendingBadge => _t('Diproses', 'Pending');
+  static String get profileVerifyNowButton => _t('Verifikasi Sekarang', 'Verify Now');
   static String profileMemberSince(String date) => _t('Member sejak $date', 'Member since $date');
   static String get profilePersonalInfoHeading => _t('Informasi Pribadi', 'Personal Information');
   static String get profileFullName => _t('Nama Lengkap', 'Full Name');
@@ -846,6 +850,32 @@ class S {
   static String get profileUserId => _t('ID Pengguna', 'User ID');
   static String get profileAccountVerificationHeading => _t('Verifikasi Akun', 'Account Verification');
   static String get profileIdentity => _t('Identitas', 'Identity');
+
+  // ---------------------------------------------------------------------
+  // Verifikasi Identitas (KYC-lite) — reached from the account menu and
+  // from Profil Saya's Account Verification section.
+  // ---------------------------------------------------------------------
+  static String get kycHeading => _t('Verifikasi Identitas', 'Identity Verification');
+  static String get kycFormHeading => _t('Ajukan Verifikasi', 'Submit Verification');
+  static String get kycDemoNotice => _t(
+        'Mode Demo: verifikasi ini tidak dicek ke database resmi manapun, hanya simulasi. Jangan masukkan data pribadi asli — isi dengan data contoh saja.',
+        "Demo Mode: this isn't checked against any real database, it's a simulation only. Don't enter real personal information — sample data is fine.",
+      );
+  static String get kycFullNameLabel => _t('Nama Lengkap', 'Full Name');
+  static String get kycFullNameHint => _t('Masukkan nama lengkap', 'Enter your full name');
+  static String get kycIdNumberLabel => _t('Nomor KTP (16 digit)', 'ID Number (16 digits)');
+  static String get kycIdNumberHint => _t('mis. 3271000000000001', 'e.g. 3271000000000001');
+  static String get kycNameRequired => _t('Nama lengkap wajib diisi', 'Full name is required');
+  static String get kycIdNumberInvalid => _t('Nomor KTP harus 16 digit angka', 'ID number must be 16 digits');
+  static String get kycSubmitButton => _t('Ajukan Verifikasi', 'Submit for Verification');
+  static String get kycPendingTitle => _t('Sedang Diproses', 'Under Review');
+  static String get kycPendingSubtitle => _t(
+        'Verifikasi kamu sedang ditinjau. Biasanya selesai dalam beberapa saat — coba muat ulang halaman ini nanti.',
+        'Your verification is being reviewed. Usually done within moments — try reloading this page again shortly.',
+      );
+  static String get kycVerifiedTitle => _t('Terverifikasi', 'Verified');
+  static String get kycVerifiedSubtitle =>
+      _t('Identitas kamu sudah terverifikasi.', 'Your identity has been verified.');
   static String get profileSettingsHeading => _t('Pengaturan Profil', 'Profile Settings');
   static String get profilePhoto => _t('Foto Profil', 'Profile Photo');
   static String get profileDisplayName => _t('Nama Tampilan', 'Display Name');

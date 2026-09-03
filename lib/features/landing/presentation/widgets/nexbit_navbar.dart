@@ -5,6 +5,7 @@ import '../../../../core/i18n/strings.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../../core/widgets/nexbit_logo_mark.dart';
 import '../../../account/presentation/pages/nexbit_help_page.dart';
+import '../../../account/presentation/pages/nexbit_kyc_page.dart';
 import '../../../account/presentation/pages/nexbit_preferences_page.dart';
 import '../../../account/presentation/pages/nexbit_profile_page.dart';
 import '../../../account/presentation/pages/nexbit_security_page.dart';
@@ -189,6 +190,9 @@ class _AccountMenu extends StatelessWidget {
           case 'security':
             _open(context, const NexbitSecurityPage());
             break;
+          case 'verification':
+            _open(context, const NexbitKycPage());
+            break;
           case 'preferences':
             _open(context, const NexbitPreferencesPage());
             break;
@@ -237,6 +241,7 @@ class _AccountMenu extends StatelessWidget {
         const PopupMenuDivider(),
         _item('profile', Icons.person_outline, S.navMyProfile),
         _item('security', Icons.shield_outlined, S.navSecurity),
+        _item('verification', Icons.verified_user_outlined, S.navVerification),
         _item('preferences', Icons.tune, S.navPreferences),
         _item('help', Icons.help_outline, S.navHelp),
         const PopupMenuDivider(),

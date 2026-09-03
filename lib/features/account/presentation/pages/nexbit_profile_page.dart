@@ -5,14 +5,49 @@ import '../../../../core/i18n/app_locale.dart';
 import '../../../../core/i18n/strings.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../widgets/account_widgets.dart';
+import 'nexbit_kyc_page.dart';
 
 /// "Profil Saya" — personal info, verification status, profile settings,
 /// and a danger zone. Uses the real name/email set at login/register
 /// ([currentUserName]/[currentUserEmail]); everything else (phone,
 /// country, user id, join date) is deterministic mock data seeded from
-/// the email since there's no real backend behind this demo.
-class NexbitProfilePage extends StatelessWidget {
+/// the email since there's no real backend behind this demo. Identity
+/// verification status IS real, though — fetched from /kyc/status (see
+/// NexbitKycPage) rather than the permanently-hardcoded "Verified" badge
+/// this section used to show.
+class NexbitProfilePage extends StatefulWidget {
   const NexbitProfilePage({super.key});
+
+  @override
+  State<NexbitProfilePage> createState() => _NexbitProfilePageState();
+}
+
+class _NexbitProfilePageState extends State<NexbitProfilePage> {
+  KycStatus _kycStatus = KycStatus.unverified;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKycStatus();
+  }
+
+  Future<void> _loadKycStatus() async {
+    try {
+      final json = await ApiClient.getKycStatus(authToken.value);
+      if (!mounted) return;
+      setState(() => _kycStatus = kycStatusFromJson(json['status'] as String));
+    } catch (_) {
+      // Stays on the unverified default on a failed fetch — same
+      // fail-quiet convention as every other best-effort load in this app.
+    }
+  }
+
+  Future<void> _openKycPage(BuildContext context) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NexbitKycPage()));
+    // The KYC page's own state may have changed while it was open
+    // (submitted a verification) — refresh so this page's badges agree.
+    _loadKycStatus();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +69,7 @@ class NexbitProfilePage extends StatelessWidget {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _ProfileHeader(name: displayName, email: email),
+                  _ProfileHeader(name: displayName, email: email, kycStatus: _kycStatus),
                   const SizedBox(height: 24),
                   AccountSectionCard(
                     title: S.profilePersonalInfoHeading,
@@ -57,9 +92,10 @@ class NexbitProfilePage extends StatelessWidget {
                     children: [
                       AccountInfoRow(
                         icon: Icons.verified_user_outlined,
-                        iconColor: NexbitColors.up,
+                        iconColor: _kycStatusColor(_kycStatus),
                         label: S.profileIdentity,
-                        trailing: _StatusChip(label: S.profileVerifiedBadge, color: NexbitColors.up),
+                        trailing: _kycStatusChip(_kycStatus),
+                        onTap: () => _openKycPage(context),
                       ),
                     ],
                   ),
@@ -248,10 +284,34 @@ class NexbitProfilePage extends StatelessWidget {
   }
 }
 
+/// Color/label/icon for each real [KycStatus] — shared by the header
+/// badge and the Account Verification row so they never disagree.
+Color _kycStatusColor(KycStatus status) => switch (status) {
+      KycStatus.verified => NexbitColors.up,
+      KycStatus.pending => NexbitColors.accent2,
+      KycStatus.unverified => NexbitColors.muted,
+    };
+
+String _kycStatusLabel(KycStatus status) => switch (status) {
+      KycStatus.verified => S.profileVerifiedBadge,
+      KycStatus.pending => S.profilePendingBadge,
+      KycStatus.unverified => S.profileUnverifiedBadge,
+    };
+
+IconData _kycStatusIcon(KycStatus status) => switch (status) {
+      KycStatus.verified => Icons.check_circle,
+      KycStatus.pending => Icons.hourglass_top,
+      KycStatus.unverified => Icons.info_outline,
+    };
+
+Widget _kycStatusChip(KycStatus status) =>
+    _StatusChip(label: _kycStatusLabel(status), color: _kycStatusColor(status), icon: _kycStatusIcon(status));
+
 class _ProfileHeader extends StatelessWidget {
   final String name;
   final String email;
-  const _ProfileHeader({required this.name, required this.email});
+  final KycStatus kycStatus;
+  const _ProfileHeader({required this.name, required this.email, required this.kycStatus});
 
   @override
   Widget build(BuildContext context) {
@@ -281,7 +341,7 @@ class _ProfileHeader extends StatelessWidget {
                   children: [
                     Flexible(child: Text(name, overflow: TextOverflow.ellipsis, style: NexbitText.body(fontSize: 17, weight: FontWeight.w700, color: NexbitColors.text))),
                     const SizedBox(width: 8),
-                    _StatusChip(label: S.profileVerifiedBadge, color: NexbitColors.up),
+                    _kycStatusChip(kycStatus),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -300,7 +360,8 @@ class _ProfileHeader extends StatelessWidget {
 class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;
-  const _StatusChip({required this.label, required this.color});
+  final IconData icon;
+  const _StatusChip({required this.label, required this.color, this.icon = Icons.check_circle});
 
   @override
   Widget build(BuildContext context) {
@@ -314,7 +375,7 @@ class _StatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle, size: 12, color: color),
+          Icon(icon, size: 12, color: color),
           const SizedBox(width: 4),
           Text(label, style: NexbitText.body(fontSize: 11, weight: FontWeight.w600, color: color)),
         ],
