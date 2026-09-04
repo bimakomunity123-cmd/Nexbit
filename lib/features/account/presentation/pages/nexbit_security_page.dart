@@ -9,9 +9,14 @@ import '../../../landing/presentation/widgets/nexbit_buttons.dart';
 import '../widgets/account_widgets.dart';
 
 /// "Keamanan" — security score, login/auth toggles (2FA, biometric),
-/// active devices, and a recent security-activity feed. 2FA/biometric
-/// are real local widget state, persisted via [AppPrefs] so they survive
-/// a reload; device list and activity feed are deterministic mock data.
+/// active devices, and a recent security-activity feed. 2FA is real
+/// server state (see backend/app/routers/auth.py's /auth/2fa/enable|
+/// disable and login(), which actually gates login behind a code once
+/// this is on — previously a purely local, no-effect preference).
+/// Biometric stays a local-only preference: this is a browser demo
+/// with no real device biometric/WebAuthn integration to turn on, so
+/// faking that would just be a different kind of dishonest toggle.
+/// Device list and activity feed are deterministic mock data.
 class NexbitSecurityPage extends StatefulWidget {
   const NexbitSecurityPage({super.key});
 
@@ -20,15 +25,49 @@ class NexbitSecurityPage extends StatefulWidget {
 }
 
 class _NexbitSecurityPageState extends State<NexbitSecurityPage> {
-  static const _kTwoFa = 'sec_2fa';
   static const _kBiometric = 'sec_biometric';
 
-  late bool _twoFa = AppPrefs.getBool(_kTwoFa, false);
+  bool _twoFa = false;
+  // True only until the real value has been fetched — avoids briefly
+  // showing "off" for an account that actually has 2FA on, same
+  // purpose as every other page's _loading flag in this app.
+  bool _twoFaLoading = true;
   late bool _biometric = AppPrefs.getBool(_kBiometric, true);
 
-  void _setTwoFa(bool v) {
-    setState(() => _twoFa = v);
-    AppPrefs.setBool(_kTwoFa, v);
+  @override
+  void initState() {
+    super.initState();
+    _loadTwoFactorStatus();
+  }
+
+  Future<void> _loadTwoFactorStatus() async {
+    try {
+      final result = await ApiClient.me(authToken.value);
+      if (!mounted) return;
+      setState(() {
+        _twoFa = result['two_factor_enabled'] as bool;
+        _twoFaLoading = false;
+      });
+    } catch (_) {
+      // Stays on the "off" default on a failed fetch — same fail-quiet
+      // convention as every other best-effort load in this app.
+      if (mounted) setState(() => _twoFaLoading = false);
+    }
+  }
+
+  Future<void> _setTwoFa(bool v) async {
+    setState(() => _twoFa = v); // optimistic; reverted below on failure
+    try {
+      if (v) {
+        await ApiClient.enableTwoFactor(authToken.value);
+      } else {
+        await ApiClient.disableTwoFactor(authToken.value);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _twoFa = !v);
+      _snack(e.message);
+    }
   }
 
   void _setBiometric(bool v) {
@@ -217,7 +256,11 @@ class _NexbitSecurityPageState extends State<NexbitSecurityPage> {
                   // long, wrapped label on narrow screens never squeezes
                   // the status text and switch together.
                   subtitle: '${S.security2faDesc} · ${_twoFa ? S.securityActive : S.securityInactive}',
-                  trailing: Switch(value: _twoFa, activeColor: NexbitColors.accent, onChanged: _setTwoFa),
+                  trailing: Switch(
+                    value: _twoFa,
+                    activeColor: NexbitColors.accent,
+                    onChanged: _twoFaLoading ? null : _setTwoFa,
+                  ),
                 ),
                 const AccountRowDivider(),
                 AccountInfoRow(

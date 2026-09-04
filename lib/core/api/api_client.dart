@@ -118,6 +118,24 @@ class ApiClient {
     await _send(() => http.delete(_uri('/auth/account'), headers: _headers(token: token)));
   }
 
+  /// The second step of login for an account with 2FA enabled — see
+  /// login()'s response, which carries `challenge_token`/`otp_code`
+  /// instead of an access_token when this is needed. Returns the same
+  /// TokenResponse shape as a normal login on success.
+  static Future<Map<String, dynamic>> verifyTwoFactor({required String challengeToken, required String code}) {
+    return _postJson('/auth/login/verify-2fa', {'challenge_token': challengeToken, 'code': code});
+  }
+
+  /// Turns 2FA on/off for the current account — previously Keamanan's
+  /// toggle was purely local (AppPrefs) with zero effect on login.
+  static Future<void> enableTwoFactor(String token) async {
+    await _postJson('/auth/2fa/enable', {}, token: token);
+  }
+
+  static Future<void> disableTwoFactor(String token) async {
+    await _postJson('/auth/2fa/disable', {}, token: token);
+  }
+
   // ---- Spot trading (Trading page buy/sell) ----
 
   static Future<Map<String, dynamic>> getSpotWallet(String token) => _getJson('/spot/wallet', token: token);

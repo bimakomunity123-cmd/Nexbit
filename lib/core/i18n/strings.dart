@@ -373,6 +373,22 @@ class S {
   static String get loginNewUser => _t('Pengguna baru? ', 'New user? ');
   static String get loginRegister => _t('Daftar', 'Sign Up');
   static String get loginRequiredFields => _t('Email dan kata sandi wajib diisi', 'Email and password are required');
+
+  // ---------------------------------------------------------------------
+  // Login — 2FA step (shown when the account has 2FA enabled; see
+  // Keamanan's toggle and backend/app/routers/auth.py's login())
+  // ---------------------------------------------------------------------
+  static String get loginTwoFactorHeading => _t('Verifikasi Diperlukan', 'Verification Required');
+  static String get loginTwoFactorSubtitle =>
+      _t('Masukkan kode 6 digit untuk melanjutkan masuk.', 'Enter the 6-digit code to continue logging in.');
+  static String get loginTwoFactorCodeLabel => _t('Kode Verifikasi', 'Verification Code');
+  static String get loginTwoFactorCodeRequired => _t('Kode verifikasi wajib diisi', 'Verification code is required');
+  static String get loginTwoFactorSubmit => _t('Verifikasi', 'Verify');
+  static String get loginTwoFactorBack => _t('Kembali ke halaman masuk', 'Back to login');
+  static String get loginTwoFactorDemoNoticeBody => _t(
+        'Aplikasi ini belum punya layanan SMS/authenticator app sungguhan, jadi kode verifikasi ditampilkan langsung di sini alih-alih dikirim ke perangkat kamu.',
+        "This app doesn't have a real SMS/authenticator app service yet, so the verification code is shown here directly instead of being sent to your device.",
+      );
   static String get loginWelcomeBack => _t('Selamat Datang Kembali di Nexbit', 'Welcome Back to Nexbit');
   static String get loginWelcomeBackSubtitle => _t(
         'Trader Nexbit, mari kelola portofolio aset digitalmu dari mana saja, kapan saja.',
