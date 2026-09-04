@@ -4,31 +4,33 @@ import '../../../../core/i18n/strings.dart';
 import '../../../../core/theme/nexbit_theme.dart';
 import '../../../auth/presentation/pages/nexbit_login_page.dart';
 import '../../domain/models/futures_contract.dart';
+import '../../domain/models/futures_order.dart';
 import '../../domain/models/futures_position.dart';
 
-enum _FuturesOrderType { limit, market, stopLimit, stopMarket }
-
-/// The "Open Position" order-entry form — Cross/Isolated margin mode,
-/// independent Long/Short leverage (each opens its own picker, same as a
-/// real exchange since the two sides can carry different risk), discrete
-/// %-of-buying-power quick amounts instead of a vague continuous slider,
-/// a live Order Value readout, and per-side liquidation/margin previews
-/// that actually recompute as you type — then a real Long/Short action
-/// that hands a new [FuturesPosition] back to the page.
+/// The order-entry form — Cross/Isolated margin mode, independent Long/
+/// Short leverage (each opens its own picker, same as a real exchange
+/// since the two sides can carry different risk), discrete %-of-buying-
+/// power quick amounts instead of a vague continuous slider, a live
+/// Order Value readout, and per-side liquidation/margin previews that
+/// actually recompute as you type — then a real Long/Short action that
+/// hands a [FuturesOrderSubmission] back to the page. The order-type
+/// tab (Limit/Market/Stop Limit/Stop Market) is sent to the backend now
+/// — only Market fills immediately; the rest are just recorded as open
+/// orders (see NexbitFuturesPage._submitOrder).
 class FuturesOrderFormPanel extends StatefulWidget {
   final FuturesContract contract;
   final double availableBalance;
-  /// Returns whether the position actually opened — see
-  /// NexbitFuturesPage._openPosition, which is also the one place that
+  /// Returns whether the order actually went through — see
+  /// NexbitFuturesPage._submitOrder, which is also the one place that
   /// shows the resulting success/error snackbar, only once the real
   /// backend result is known.
-  final Future<bool> Function(FuturesPosition) onOpenPosition;
+  final Future<bool> Function(FuturesOrderSubmission) onSubmitOrder;
 
   const FuturesOrderFormPanel({
     super.key,
     required this.contract,
     required this.availableBalance,
-    required this.onOpenPosition,
+    required this.onSubmitOrder,
   });
 
   @override
@@ -36,7 +38,7 @@ class FuturesOrderFormPanel extends StatefulWidget {
 }
 
 class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
-  _FuturesOrderType _type = _FuturesOrderType.limit;
+  FuturesOrderType _type = FuturesOrderType.limit;
   late final _priceController = TextEditingController(text: formatUsdt(widget.contract.price, widget.contract.decimals));
   final _amountController = TextEditingController();
   int? _activePct;
@@ -65,7 +67,7 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
 
   double get _amount => double.tryParse(_amountController.text.replaceAll(',', '')) ?? 0;
   double get _price =>
-      _type == _FuturesOrderType.market ? widget.contract.price : (double.tryParse(_priceController.text.replaceAll(',', '')) ?? widget.contract.price);
+      _type == FuturesOrderType.market ? widget.contract.price : (double.tryParse(_priceController.text.replaceAll(',', '')) ?? widget.contract.price);
   double get _notional => _price * _amount;
   double _marginFor(int leverage) => leverage == 0 ? 0 : _notional / leverage;
 
@@ -131,17 +133,18 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
       return;
     }
     setState(() => _submittingSide = side);
-    // widget.onOpenPosition (see NexbitFuturesPage._openPosition) is the
+    // widget.onSubmitOrder (see NexbitFuturesPage._submitOrder) is the
     // one that actually shows the success/error snackbar, only once the
     // real backend result is known — this used to also fire an
     // optimistic "success" snackbar immediately, which meant a request
     // that ended up failing still briefly showed "Order berhasil
     // dibuka" right before the real error appeared.
-    final ok = await widget.onOpenPosition(FuturesPosition(
+    final ok = await widget.onSubmitOrder(FuturesOrderSubmission(
       contract: widget.contract,
       side: side,
+      orderType: _type,
+      price: _price,
       size: _amount,
-      entryPrice: _price,
       leverage: side == OrderSide.long ? _longLeverage : _shortLeverage,
       marginMode: _marginMode,
     ));
@@ -204,7 +207,7 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
           const SizedBox(height: 16),
           Row(
             children: [
-              for (final t in _FuturesOrderType.values)
+              for (final t in FuturesOrderType.values)
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: InkWell(
@@ -228,7 +231,7 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
             ],
           ),
           const SizedBox(height: 14),
-          if (_type == _FuturesOrderType.limit || _type == _FuturesOrderType.stopLimit) ...[
+          if (_type == FuturesOrderType.limit || _type == FuturesOrderType.stopLimit) ...[
             _field(S.futuresFormPrice, _priceController, quote, onChanged: () => setState(() {})),
             const SizedBox(height: 10),
           ],
@@ -310,11 +313,11 @@ class _FuturesOrderFormPanelState extends State<FuturesOrderFormPanel> {
     );
   }
 
-  String _typeLabel(_FuturesOrderType t) => switch (t) {
-        _FuturesOrderType.limit => S.futuresTabLimit,
-        _FuturesOrderType.market => S.futuresTabMarket,
-        _FuturesOrderType.stopLimit => S.futuresTabStopLimit,
-        _FuturesOrderType.stopMarket => S.futuresTabStopMarket,
+  String _typeLabel(FuturesOrderType t) => switch (t) {
+        FuturesOrderType.limit => S.futuresTabLimit,
+        FuturesOrderType.market => S.futuresTabMarket,
+        FuturesOrderType.stopLimit => S.futuresTabStopLimit,
+        FuturesOrderType.stopMarket => S.futuresTabStopMarket,
       };
 
   Widget _field(String label, TextEditingController controller, String unit, {VoidCallback? onChanged}) {

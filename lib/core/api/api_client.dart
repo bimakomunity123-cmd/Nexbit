@@ -140,6 +140,22 @@ class ApiClient {
     return _postJson('/trading/positions', body, token: token);
   }
 
+  /// Every order this user has ever placed, newest first — backs the
+  /// Open Orders/Order History tabs (filtered client-side by status).
+  static Future<List<dynamic>> getFuturesOrders(String token) => _getList('/trading/orders', token: token);
+
+  /// Places a Futures order — 'market' fills immediately (the response
+  /// includes both `order` and `position`); the other order types are
+  /// just recorded as open (`order` only). See backend/app/routers/
+  /// trading.py's create_order() docstring.
+  static Future<Map<String, dynamic>> createFuturesOrder(String token, Map<String, dynamic> body) {
+    return _postJson('/trading/orders', body, token: token);
+  }
+
+  static Future<Map<String, dynamic>> cancelFuturesOrder(String token, String orderId) {
+    return _postJson('/trading/orders/$orderId/cancel', {}, token: token);
+  }
+
   static Future<Map<String, dynamic>> closePosition(
     String token,
     String positionId,

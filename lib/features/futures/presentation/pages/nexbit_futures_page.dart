@@ -18,6 +18,7 @@ import '../../../market/presentation/pages/nexbit_price_page.dart';
 import '../../../staking/presentation/pages/nexbit_staking_landing_page.dart';
 import '../../../trading/presentation/widgets/tradingview_chart.dart';
 import '../../domain/models/futures_contract.dart';
+import '../../domain/models/futures_order.dart';
 import '../../domain/models/futures_position.dart';
 import '../widgets/futures_account_info_card.dart';
 import '../widgets/futures_contract_details_card.dart';
@@ -53,6 +54,10 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   // Trade History tab data — stays empty for a guest, same as every
   // other backend-only list this page has.
   List<ClosedFuturesPosition> _closedPositions = [];
+  // Open Orders/Order History tab data — a small seeded list for guests
+  // (never touches the backend, same purpose as _seedGuestPosition), the
+  // real backend list for a logged-in user (see _loadAccountData).
+  late List<FuturesOrder> _futuresOrders = isLoggedIn.value ? [] : _seedGuestOrders();
   double _realizedPnl = 0;
   double _balance = 1250.0;
   // True only while a logged-in user's real balance/positions are still
@@ -71,6 +76,52 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
     final btc = withLiveContractPrice(kFuturesCryptoContracts.first);
     return [
       FuturesPosition(contract: btc, side: OrderSide.long, size: 0.05, entryPrice: btc.price * 0.996, leverage: 10),
+    ];
+  }
+
+  /// One open limit order, one filled market order, one cancelled stop —
+  /// enough to show every status the Open Orders/Order History tabs can
+  /// render, without needing the backend.
+  List<FuturesOrder> _seedGuestOrders() {
+    final btc = withLiveContractPrice(kFuturesCryptoContracts.first);
+    final now = DateTime.now();
+    return [
+      FuturesOrder(
+        id: 'guest-open',
+        contract: btc,
+        side: OrderSide.long,
+        orderType: FuturesOrderType.limit,
+        price: btc.price * 0.98,
+        size: 0.02,
+        leverage: 10,
+        marginMode: MarginMode.isolated,
+        status: FuturesOrderStatus.open,
+        createdAt: now.subtract(const Duration(minutes: 12)),
+      ),
+      FuturesOrder(
+        id: 'guest-filled',
+        contract: btc,
+        side: OrderSide.long,
+        orderType: FuturesOrderType.market,
+        price: btc.price * 0.996,
+        size: 0.05,
+        leverage: 10,
+        marginMode: MarginMode.isolated,
+        status: FuturesOrderStatus.filled,
+        createdAt: now.subtract(const Duration(hours: 3)),
+      ),
+      FuturesOrder(
+        id: 'guest-cancelled',
+        contract: btc,
+        side: OrderSide.short,
+        orderType: FuturesOrderType.stopMarket,
+        price: btc.price * 1.03,
+        size: 0.03,
+        leverage: 5,
+        marginMode: MarginMode.cross,
+        status: FuturesOrderStatus.cancelled,
+        createdAt: now.subtract(const Duration(hours: 8)),
+      ),
     ];
   }
 
@@ -98,16 +149,19 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
         ApiClient.getAccount(token),
         ApiClient.getPositions(token),
         ApiClient.getPositionHistory(token),
+        ApiClient.getFuturesOrders(token),
       ]);
       final account = results[0] as Map<String, dynamic>;
       final positionsJson = results[1] as List<dynamic>;
       final historyJson = results[2] as List<dynamic>;
+      final ordersJson = results[3] as List<dynamic>;
       if (!mounted) return;
       setState(() {
         _balance = (account['balance'] as num).toDouble();
         _realizedPnl = (account['realized_pnl'] as num).toDouble();
         _positions = positionsJson.map((j) => _positionFromJson(j as Map<String, dynamic>)).toList();
         _closedPositions = historyJson.map((j) => _closedPositionFromJson(j as Map<String, dynamic>)).toList();
+        _futuresOrders = ordersJson.map((j) => _futuresOrderFromJson(j as Map<String, dynamic>)).toList();
         _loadingAccount = false;
       });
     } catch (_) {
@@ -133,6 +187,14 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
       leverage: (json['leverage'] as num).toInt(),
       marginMode: json['margin_mode'] == 'cross' ? MarginMode.cross : MarginMode.isolated,
     );
+  }
+
+  FuturesOrder _futuresOrderFromJson(Map<String, dynamic> json) {
+    final contract = kAllFuturesContracts.firstWhere(
+      (c) => c.id == json['contract_id'],
+      orElse: () => kFuturesCryptoContracts.first,
+    );
+    return FuturesOrder.fromJson(json, contract);
   }
 
   ClosedFuturesPosition _closedPositionFromJson(Map<String, dynamic> json) {
@@ -224,27 +286,58 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
   // Returns whether it actually succeeded — FuturesOrderFormPanel uses
   // that to decide whether to clear its amount field, not to re-derive
   // its own success/error messaging (this is the only place that shows
-  // either).
-  Future<bool> _openPosition(FuturesPosition p) async {
+  // either). A 'market' order fills immediately (the response carries a
+  // 'position' too, so it's appended to _positions alongside the order);
+  // the other order types are just recorded as open — see
+  // backend/app/routers/trading.py's create_order() docstring.
+  Future<bool> _submitOrder(FuturesOrderSubmission s) async {
     try {
-      final json = await ApiClient.openPosition(authToken.value, {
-        'contract_id': p.contract.id,
-        'side': p.side == OrderSide.short ? 'short' : 'long',
-        'size': p.size,
-        'entry_price': p.entryPrice,
-        'leverage': p.leverage,
-        'margin_mode': p.marginMode == MarginMode.cross ? 'cross' : 'isolated',
+      final json = await ApiClient.createFuturesOrder(authToken.value, {
+        'contract_id': s.contract.id,
+        'side': s.side == OrderSide.short ? 'short' : 'long',
+        'order_type': futuresOrderTypeToJson(s.orderType),
+        'price': s.price,
+        'size': s.size,
+        'leverage': s.leverage,
+        'margin_mode': s.marginMode == MarginMode.cross ? 'cross' : 'isolated',
       });
       if (!mounted) return true;
-      setState(() => _positions = [..._positions, _positionFromJson(json)]);
+      final newOrder = _futuresOrderFromJson(json['order'] as Map<String, dynamic>);
+      final filled = json.containsKey('position');
+      setState(() {
+        _futuresOrders = [newOrder, ..._futuresOrders];
+        if (filled) {
+          _positions = [..._positions, _positionFromJson(json['position'] as Map<String, dynamic>)];
+        }
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(S.futuresOrderPlacedSnack), duration: const Duration(seconds: 2)),
+        SnackBar(
+          content: Text(filled ? S.futuresOrderPlacedSnack : S.futuresOrderQueuedSnack),
+          duration: const Duration(seconds: 2),
+        ),
       );
       return true;
     } on ApiException catch (e) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
       return false;
+    }
+  }
+
+  Future<void> _cancelOrder(FuturesOrder order) async {
+    try {
+      final json = await ApiClient.cancelFuturesOrder(authToken.value, order.id);
+      if (!mounted) return;
+      final updated = _futuresOrderFromJson(json);
+      setState(() {
+        _futuresOrders = _futuresOrders.map((o) => o.id == order.id ? updated : o).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(S.orderCancelledSnack), duration: const Duration(seconds: 2)),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), duration: const Duration(seconds: 3)));
     }
   }
 
@@ -628,6 +721,8 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           markPriceOf: _markPriceOf,
           onClose: _closePosition,
           closedPositions: _closedPositions,
+          orders: _futuresOrders,
+          onCancelOrder: _cancelOrder,
         ),
       ],
     );
@@ -646,7 +741,7 @@ class _NexbitFuturesPageState extends State<NexbitFuturesPage> {
           child: FuturesOrderFormPanel(
             contract: selected,
             availableBalance: _availableBalance,
-            onOpenPosition: _openPosition,
+            onSubmitOrder: _submitOrder,
           ),
         ),
         const SizedBox(height: 16),

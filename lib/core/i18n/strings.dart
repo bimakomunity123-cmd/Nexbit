@@ -724,9 +724,6 @@ class S {
   static String get futuresColSymbol => _t('Simbol', 'Symbol');
   static String get futuresColType => _t('Tipe', 'Type');
   static String get futuresColAmount => _t('Jumlah', 'Amount');
-  static String get futuresColFilled => _t('Terisi', 'Filled');
-  static String get futuresColTriggerConditions => _t('Kondisi Trigger', 'Trigger Conditions');
-  static String get futuresColTif => _t('TIF', 'TIF');
   static String get futuresColStatus => _t('Status', 'Status');
   static String get futuresColFee => _t('Fee', 'Fee');
   static String get futuresClose => _t('Close', 'Close');
@@ -737,6 +734,7 @@ class S {
   static String get futuresNoHistory => _t('Belum ada riwayat', 'No history yet');
   static String get futuresPositionClosedSnack => _t('Posisi ditutup', 'Position closed');
   static String get futuresOrderPlacedSnack => _t('Order berhasil dibuka', 'Order opened successfully');
+  static String get futuresOrderQueuedSnack => _t('Order berhasil dipasang', 'Order placed successfully');
   static String get futuresTabLimit => _t('Limit', 'Limit');
   static String get futuresTabMarket => _t('Market', 'Market');
   static String get futuresTabStopLimit => _t('Stop Limit', 'Stop Limit');
