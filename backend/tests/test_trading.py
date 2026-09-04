@@ -15,6 +15,20 @@ def _open_position(client, token, **overrides):
     return client.post("/trading/positions", json=body, headers=auth_headers(token))
 
 
+def _create_order(client, token, **overrides):
+    body = {
+        "contract_id": "BTC",
+        "side": "long",
+        "order_type": "market",
+        "price": 70000.0,
+        "size": 0.1,
+        "leverage": 10,
+        "margin_mode": "isolated",
+    }
+    body.update(overrides)
+    return client.post("/trading/orders", json=body, headers=auth_headers(token))
+
+
 class TestAccount:
     def test_account_auto_created_with_starting_balance(self, client):
         token, _ = register_and_login(client, email="account@example.com")
@@ -191,6 +205,113 @@ class TestExchange:
         resp = client.post("/trading/exchange/to-futures", json={"idr_amount": 100_000, "rate": 15_000})
         assert resp.status_code == 401
         resp = client.post("/trading/exchange/to-spot", json={"usdt_amount": 100, "rate": 15_000})
+        assert resp.status_code == 401
+
+
+class TestCreateOrder:
+    def test_market_order_fills_immediately_and_opens_a_position(self, client):
+        token, _ = register_and_login(client, email="marketorder@example.com")
+        resp = _create_order(client, token)
+        assert resp.status_code == 201
+        body = resp.get_json()
+        assert body["order"]["status"] == "filled"
+        assert body["order"]["order_type"] == "market"
+        assert "position" in body
+        assert body["position"]["contract_id"] == "BTC"
+
+        positions = client.get("/trading/positions", headers=auth_headers(token))
+        assert len(positions.get_json()) == 1
+
+    def test_limit_order_stays_open_and_opens_no_position(self, client):
+        token, _ = register_and_login(client, email="limitorder@example.com")
+        resp = _create_order(client, token, order_type="limit", price=65000.0)
+        assert resp.status_code == 201
+        body = resp.get_json()
+        assert body["order"]["status"] == "open"
+        assert "position" not in body
+
+        positions = client.get("/trading/positions", headers=auth_headers(token))
+        assert positions.get_json() == []
+
+    def test_stop_limit_and_stop_market_orders_also_stay_open(self, client):
+        token, _ = register_and_login(client, email="stoporders@example.com")
+        for order_type in ("stop_limit", "stop_market"):
+            resp = _create_order(client, token, order_type=order_type)
+            assert resp.get_json()["order"]["status"] == "open"
+
+    def test_create_order_without_token_rejected(self, client):
+        resp = client.post("/trading/orders", json={
+            "contract_id": "BTC", "side": "long", "order_type": "market",
+            "price": 70000.0, "size": 0.1, "leverage": 10, "margin_mode": "isolated",
+        })
+        assert resp.status_code == 401
+
+    def test_invalid_leverage_rejected(self, client):
+        token, _ = register_and_login(client, email="orderbadlev@example.com")
+        resp = _create_order(client, token, leverage=500)
+        assert resp.status_code == 422
+
+
+class TestCancelOrder:
+    def test_cancel_open_order_succeeds(self, client):
+        token, _ = register_and_login(client, email="cancelorder@example.com")
+        order = _create_order(client, token, order_type="limit").get_json()["order"]
+
+        resp = client.post(f"/trading/orders/{order['id']}/cancel", headers=auth_headers(token))
+        assert resp.status_code == 200
+        assert resp.get_json()["status"] == "cancelled"
+
+    def test_cancel_already_cancelled_order_rejected(self, client):
+        token, _ = register_and_login(client, email="doublecancelorder@example.com")
+        order = _create_order(client, token, order_type="limit").get_json()["order"]
+        client.post(f"/trading/orders/{order['id']}/cancel", headers=auth_headers(token))
+
+        resp = client.post(f"/trading/orders/{order['id']}/cancel", headers=auth_headers(token))
+        assert resp.status_code == 400
+
+    def test_cannot_cancel_a_filled_order(self, client):
+        token, _ = register_and_login(client, email="cancelfilledorder@example.com")
+        order = _create_order(client, token, order_type="market").get_json()["order"]
+
+        resp = client.post(f"/trading/orders/{order['id']}/cancel", headers=auth_headers(token))
+        assert resp.status_code == 400
+
+    def test_cancel_nonexistent_order_rejected(self, client):
+        token, _ = register_and_login(client, email="cancelghostorder@example.com")
+        resp = client.post("/trading/orders/not-a-real-id/cancel", headers=auth_headers(token))
+        assert resp.status_code == 404
+
+    def test_cannot_cancel_another_users_order(self, client):
+        token_a, _ = register_and_login(client, email="ordersowner@example.com")
+        token_b, _ = register_and_login(client, email="ordersintruder@example.com")
+        order = _create_order(client, token_a, order_type="limit").get_json()["order"]
+
+        resp = client.post(f"/trading/orders/{order['id']}/cancel", headers=auth_headers(token_b))
+        assert resp.status_code == 404
+
+
+class TestListOrders:
+    def test_orders_listed_newest_first(self, client):
+        token, _ = register_and_login(client, email="orderlist@example.com")
+        first = _create_order(client, token, contract_id="BTC").get_json()["order"]
+        second = _create_order(client, token, contract_id="ETH").get_json()["order"]
+
+        resp = client.get("/trading/orders", headers=auth_headers(token))
+        ids_in_order = [o["id"] for o in resp.get_json()]
+        assert ids_in_order == [second["id"], first["id"]]
+
+    def test_orders_isolated_per_user(self, client):
+        token_a, _ = register_and_login(client, email="ordersa@example.com")
+        token_b, _ = register_and_login(client, email="ordersb@example.com")
+        _create_order(client, token_a)
+
+        resp_a = client.get("/trading/orders", headers=auth_headers(token_a))
+        resp_b = client.get("/trading/orders", headers=auth_headers(token_b))
+        assert len(resp_a.get_json()) == 1
+        assert len(resp_b.get_json()) == 0
+
+    def test_orders_without_token_rejected(self, client):
+        resp = client.get("/trading/orders")
         assert resp.status_code == 401
 
 

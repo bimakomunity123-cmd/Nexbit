@@ -4,14 +4,16 @@ from flask import Blueprint, jsonify, request
 
 from ..auth_helpers import current_user
 from ..database import SessionLocal
-from ..models import Account, Position
+from ..models import Account, FuturesOrder, Position
 from ..rate_limit import limiter
 from ..schemas import (
     AccountOut,
     ClosePositionRequest,
+    CreateFuturesOrderRequest,
     ExchangeToFuturesRequest,
     ExchangeToSpotRequest,
     FuturesDepositRequest,
+    FuturesOrderOut,
     FuturesWithdrawRequest,
     OpenPositionRequest,
     PositionOut,
@@ -188,6 +190,110 @@ def exchange_to_spot():
         db.refresh(wallet)
         db.refresh(account)
         return jsonify(_exchange_response(wallet, account))
+    finally:
+        db.close()
+
+
+@trading_bp.get("/orders")
+def list_orders():
+    """Every order this user has ever placed (filled, open, or
+    cancelled), newest first — backs both the Open Orders and Order
+    History tabs, which filter this same list client-side by status
+    (see FuturesPositionsPanel), same split Spot's own order list uses.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+        orders = (
+            db.query(FuturesOrder)
+            .filter(FuturesOrder.user_id == user.id)
+            .order_by(FuturesOrder.created_at.desc())
+            .all()
+        )
+        return jsonify([FuturesOrderOut.model_validate(o).model_dump(mode="json") for o in orders])
+    finally:
+        db.close()
+
+
+@trading_bp.post("/orders")
+@limiter.limit("60 per minute")
+def create_order():
+    """Places a Futures order. A 'market' order fills immediately —
+    opens a Position in the same request, exactly like POST /positions
+    — and is recorded here as status='filled' purely for order-history
+    visibility. 'limit'/'stop_limit'/'stop_market' orders are just
+    recorded as 'open' and never auto-fill: this demo has no real
+    matching engine, the same accepted limitation as Spot's own
+    create_order() (see SpotOrder's docstring in models.py). Cancelling
+    (POST /orders/<id>/cancel) is the only thing that changes an open
+    order's status afterwards.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        body = CreateFuturesOrderRequest.model_validate(request.get_json(force=True, silent=False) or {})
+        status = "open"
+        position = None
+        if body.order_type == "market":
+            position = Position(
+                user_id=user.id,
+                contract_id=body.contract_id,
+                side=body.side,
+                size=body.size,
+                entry_price=body.price,
+                leverage=body.leverage,
+                margin_mode=body.margin_mode,
+            )
+            db.add(position)
+            status = "filled"
+
+        order = FuturesOrder(
+            user_id=user.id,
+            contract_id=body.contract_id,
+            side=body.side,
+            order_type=body.order_type,
+            price=body.price,
+            size=body.size,
+            leverage=body.leverage,
+            margin_mode=body.margin_mode,
+            status=status,
+        )
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+        result = {"order": FuturesOrderOut.model_validate(order).model_dump(mode="json")}
+        if position is not None:
+            db.refresh(position)
+            result["position"] = PositionOut.model_validate(position).model_dump(mode="json")
+        return jsonify(result), 201
+    finally:
+        db.close()
+
+
+@trading_bp.post("/orders/<order_id>/cancel")
+@limiter.limit("60 per minute")
+def cancel_order(order_id: str):
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        order = db.get(FuturesOrder, order_id)
+        if order is None or order.user_id != user.id:
+            return jsonify({"detail": "Order tidak ditemukan"}), 404
+        if order.status != "open":
+            return jsonify({"detail": "Order tidak bisa dibatalkan"}), 400
+
+        order.status = "cancelled"
+        db.commit()
+        db.refresh(order)
+        return jsonify(FuturesOrderOut.model_validate(order).model_dump(mode="json"))
     finally:
         db.close()
 

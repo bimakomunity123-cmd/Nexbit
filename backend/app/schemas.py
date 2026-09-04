@@ -116,6 +116,35 @@ class ClosePositionRequest(BaseModel):
     exit_price: float = Field(gt=0, le=1_000_000_000)
 
 
+class FuturesOrderOut(BaseModel):
+    id: str
+    contract_id: str
+    side: str
+    order_type: str
+    price: float
+    size: float
+    leverage: int
+    margin_mode: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CreateFuturesOrderRequest(BaseModel):
+    contract_id: str = Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9]+$")
+    side: Literal["long", "short"]
+    order_type: Literal["limit", "market", "stop_limit", "stop_market"]
+    # Client-supplied — same "trust the client's price" pattern as
+    # OpenPositionRequest.entry_price above (this demo has no market-
+    # data feed of its own to verify against server-side).
+    price: float = Field(gt=0, le=1_000_000_000)
+    size: float = Field(gt=0, le=1_000_000)
+    leverage: int = Field(ge=1, le=125)
+    margin_mode: Literal["cross", "isolated"] = "isolated"
+
+
 class SpotWalletOut(BaseModel):
     idr_balance: float
 

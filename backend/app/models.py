@@ -75,6 +75,32 @@ class Position(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class FuturesOrder(Base):
+    """A Futures order — separate from Position, and records every order
+    placed regardless of outcome. A 'market' order fills immediately
+    (status='filled', and a Position is opened in the same request);
+    'limit'/'stop_limit'/'stop_market' orders are just recorded as
+    'open' and never auto-fill — this demo has no real matching engine,
+    the same accepted limitation as Spot's SpotOrder (see its docstring
+    below). Cancelling is the only thing that ever changes an open
+    order's status afterwards. Backs the Futures page's Open Orders/
+    Order History tabs, both previously always-empty placeholders.
+    """
+    __tablename__ = "futures_orders"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_new_id)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), index=True, nullable=False)
+    contract_id: Mapped[str] = mapped_column(String, nullable=False)
+    side: Mapped[str] = mapped_column(String, nullable=False)  # 'long' | 'short'
+    order_type: Mapped[str] = mapped_column(String, nullable=False)  # 'limit' | 'market' | 'stop_limit' | 'stop_market'
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    size: Mapped[float] = mapped_column(Float, nullable=False)
+    leverage: Mapped[int] = mapped_column(Integer, nullable=False)
+    margin_mode: Mapped[str] = mapped_column(String, default="isolated")
+    status: Mapped[str] = mapped_column(String, default="open")  # 'open' | 'filled' | 'cancelled'
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class SpotWallet(Base):
     """One row per user — the demo Spot wallet balance, denominated in
     IDR to match kTradingPairs' quote currency for crypto (see that
