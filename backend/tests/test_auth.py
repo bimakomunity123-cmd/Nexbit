@@ -4,7 +4,7 @@ forgot/reset-password.
 from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
-from app.models import PasswordReset, User
+from app.models import Account, KycVerification, PasswordReset, Position, SpotWallet, User
 from app.security import hash_password
 
 from .helpers import auth_headers, register, register_and_login
@@ -192,6 +192,120 @@ class TestForgotAndResetPassword:
             "/auth/reset-password", json={"token": expired_token, "new_password": "whatever123"}
         )
         assert resp.status_code == 400
+
+
+class TestDeactivateAccount:
+    def test_deactivate_sets_is_active_false(self, client):
+        token, _ = register_and_login(client, email="deactivate@example.com")
+        resp = client.post("/auth/deactivate", headers=auth_headers(token))
+        assert resp.status_code == 200
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == "deactivate@example.com").first()
+            assert user.is_active is False
+        finally:
+            db.close()
+
+    def test_existing_token_still_works_after_deactivating(self, client):
+        # No session/token-revocation list in this demo — see User.
+        # is_active's docstring in models.py.
+        token, _ = register_and_login(client, email="deactivatetoken@example.com")
+        client.post("/auth/deactivate", headers=auth_headers(token))
+
+        resp = client.get("/auth/me", headers=auth_headers(token))
+        assert resp.status_code == 200
+
+    def test_logging_in_again_reactivates_the_account(self, client):
+        email = "reactivate@example.com"
+        password = "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/deactivate", headers=auth_headers(token))
+
+        login_resp = client.post("/auth/login", json={"email": email, "password": password})
+        assert login_resp.status_code == 200
+        assert login_resp.get_json()["user"]["is_active"] is True
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == email).first()
+            assert user.is_active is True
+        finally:
+            db.close()
+
+    def test_deactivate_without_token_rejected(self, client):
+        resp = client.post("/auth/deactivate")
+        assert resp.status_code == 401
+
+
+class TestDeleteAccount:
+    def test_delete_removes_the_user_row(self, client):
+        token, user = register_and_login(client, email="deleteme@example.com")
+        resp = client.delete("/auth/account", headers=auth_headers(token))
+        assert resp.status_code == 204
+
+        db = SessionLocal()
+        try:
+            assert db.get(User, user["id"]) is None
+        finally:
+            db.close()
+
+    def test_deleted_users_token_no_longer_authenticates(self, client):
+        token, _ = register_and_login(client, email="deletetoken@example.com")
+        client.delete("/auth/account", headers=auth_headers(token))
+
+        resp = client.get("/auth/me", headers=auth_headers(token))
+        assert resp.status_code == 401
+
+    def test_email_is_free_again_after_deletion(self, client):
+        email = "deletereuse@example.com"
+        token, _ = register_and_login(client, email=email)
+        client.delete("/auth/account", headers=auth_headers(token))
+
+        resp = register(client, email=email)
+        assert resp.status_code == 201
+
+    def test_delete_removes_data_from_every_feature(self, client):
+        token, user = register_and_login(client, email="deletecascade@example.com")
+        # Touch one row in as many feature tables as practical, so this
+        # test actually exercises the cascade rather than just the
+        # always-there Account row.
+        client.post(
+            "/trading/positions",
+            json={
+                "contract_id": "BTC", "side": "long", "size": 0.1,
+                "entry_price": 70000.0, "leverage": 10, "margin_mode": "isolated",
+            },
+            headers=auth_headers(token),
+        )
+        client.post("/spot/deposit", json={"amount": 1000}, headers=auth_headers(token))
+        client.post(
+            "/kyc/submit",
+            json={"full_name": "Delete Me", "id_number": "1234567890123456"},
+            headers=auth_headers(token),
+        )
+
+        resp = client.delete("/auth/account", headers=auth_headers(token))
+        assert resp.status_code == 204
+
+        db = SessionLocal()
+        try:
+            for model in (Account, Position, SpotWallet, KycVerification):
+                remaining = db.query(model).filter(model.user_id == user["id"]).all()
+                assert remaining == [], f"{model.__name__} still has rows after account deletion"
+        finally:
+            db.close()
+
+    def test_delete_without_token_rejected(self, client):
+        resp = client.delete("/auth/account")
+        assert resp.status_code == 401
+
+    def test_cannot_use_deleted_account_to_delete_again(self, client):
+        token, _ = register_and_login(client, email="doubledelete@example.com")
+        client.delete("/auth/account", headers=auth_headers(token))
+
+        resp = client.delete("/auth/account", headers=auth_headers(token))
+        assert resp.status_code == 401
 
 
 class TestPasswordHashing:

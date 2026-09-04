@@ -4,7 +4,20 @@ from flask import Blueprint, jsonify, request
 
 from ..auth_helpers import current_user
 from ..database import SessionLocal
-from ..models import Account, PasswordReset, User
+from ..models import (
+    Account,
+    FuturesOrder,
+    KycVerification,
+    PasswordReset,
+    Position,
+    SpotHolding,
+    SpotOrder,
+    SpotWallet,
+    StakingAccount,
+    StakingHolding,
+    StakingPosition,
+    User,
+)
 from ..rate_limit import limiter
 from ..schemas import (
     ChangePasswordRequest,
@@ -64,6 +77,13 @@ def login():
         # which one it was.
         if user is None or not verify_password(body.password, user.password_hash):
             return jsonify({"detail": "Email atau password salah"}), 401
+
+        # A deactivated account (see deactivate_account()) reactivates on
+        # its next successful login — exactly what the Flutter confirm
+        # dialog for "Nonaktifkan akun" already promises the user.
+        if not user.is_active:
+            user.is_active = True
+            db.commit()
 
         token = create_access_token(subject=user.id)
         return jsonify(TokenResponse(access_token=token, user=UserOut.model_validate(user)).model_dump(mode="json"))
@@ -178,5 +198,62 @@ def reset_password():
         reset.used = True
         db.commit()
         return jsonify({"detail": "Password berhasil direset"})
+    finally:
+        db.close()
+
+
+@auth_bp.post("/deactivate")
+@limiter.limit("5 per hour")
+def deactivate_account():
+    """Marks the account inactive — until now, Profil Saya's "Nonaktifkan
+    akun" button was entirely fake: it just cleared the local session
+    and claimed success without any server-side effect at all. See
+    User.is_active's docstring in models.py for the reactivate-on-login
+    behavior this pairs with.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+        user.is_active = False
+        db.commit()
+        return jsonify({"detail": "Akun dinonaktifkan"})
+    finally:
+        db.close()
+
+
+@auth_bp.delete("/account")
+@limiter.limit("5 per hour")
+def delete_account():
+    """Permanently deletes the current user and every row tied to them
+    across every feature — until now, Profil Saya's "Hapus akun" button
+    was entirely fake too, just a local logout claiming success without
+    touching the database. Irreversible; the Flutter confirm dialog is
+    the only safeguard, there's no grace period or undo server-side.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+
+        for model in (
+            Position,
+            FuturesOrder,
+            Account,
+            SpotOrder,
+            SpotHolding,
+            SpotWallet,
+            StakingPosition,
+            StakingHolding,
+            StakingAccount,
+            KycVerification,
+            PasswordReset,
+        ):
+            db.query(model).filter(model.user_id == user.id).delete(synchronize_session=False)
+        db.delete(user)
+        db.commit()
+        return "", 204
     finally:
         db.close()

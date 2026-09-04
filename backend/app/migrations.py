@@ -26,6 +26,9 @@ _COLUMN_ADDITIONS = {
         "realized_pnl": "FLOAT",
         "closed_at": "DATETIME",
     },
+    "users": {
+        "is_active": "BOOLEAN DEFAULT 1",
+    },
 }
 
 

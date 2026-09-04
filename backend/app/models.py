@@ -21,6 +21,14 @@ class User(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Set False by POST /auth/deactivate (Profil Saya's "Nonaktifkan
+    # akun") and flipped back to True the next time this user logs in
+    # successfully — matching what that button's confirm dialog already
+    # promises ("bisa mengaktifkan kembali dengan masuk lagi"). Doesn't
+    # block an already-issued JWT from working until it expires — this
+    # demo has no session/token-revocation list, the same limitation
+    # every other client-trusted-JWT endpoint here already carries.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
