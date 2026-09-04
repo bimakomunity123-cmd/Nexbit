@@ -103,6 +103,21 @@ class ApiClient {
     return _postJson('/auth/reset-password', {'token': token, 'new_password': newPassword});
   }
 
+  /// Marks the account inactive — reactivates automatically on this
+  /// user's next successful login (see backend/app/routers/auth.py's
+  /// deactivate_account()/login() docstrings). Previously "Nonaktifkan
+  /// akun" had no backend call at all.
+  static Future<void> deactivateAccount(String token) async {
+    await _postJson('/auth/deactivate', {}, token: token);
+  }
+
+  /// Permanently deletes the account and every row tied to it.
+  /// Previously "Hapus akun" had no backend call at all — see
+  /// backend/app/routers/auth.py's delete_account().
+  static Future<void> deleteAccount(String token) async {
+    await _send(() => http.delete(_uri('/auth/account'), headers: _headers(token: token)));
+  }
+
   // ---- Spot trading (Trading page buy/sell) ----
 
   static Future<Map<String, dynamic>> getSpotWallet(String token) => _getJson('/spot/wallet', token: token);

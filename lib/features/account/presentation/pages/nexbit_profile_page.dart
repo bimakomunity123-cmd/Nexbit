@@ -135,6 +135,11 @@ class _NexbitProfilePageState extends State<NexbitProfilePage> {
                         icon: Icons.logout,
                         label: S.profileLogoutAllDevices,
                         onTap: () {
+                          // Only ever clears this session — this demo has
+                          // no session/token-revocation list, so there's
+                          // no real "every other device" to reach even if
+                          // one existed (see User.is_active's docstring in
+                          // models.py for the same caveat on deactivate).
                           clearSession();
                           Navigator.of(context).popUntil((route) => route.isFirst);
                           _snack(context, S.profileLogoutAllSnack);
@@ -145,33 +150,51 @@ class _NexbitProfilePageState extends State<NexbitProfilePage> {
                         icon: Icons.pause_circle_outline,
                         iconColor: NexbitColors.down,
                         label: S.profileDeactivateAccount,
-                        onTap: () => _confirm(
-                          context,
-                          title: S.profileDeactivateConfirmTitle,
-                          message: S.profileDeactivateConfirmMessage,
-                          onConfirm: () {
-                            clearSession();
-                            Navigator.of(context).popUntil((route) => route.isFirst);
-                            _snack(context, S.profileAccountDeactivatedSnack);
-                          },
-                        ),
+                        onTap: () async {
+                          final confirmed = await _confirm(
+                            context,
+                            title: S.profileDeactivateConfirmTitle,
+                            message: S.profileDeactivateConfirmMessage,
+                            onConfirm: () async {
+                              try {
+                                await ApiClient.deactivateAccount(authToken.value);
+                                return null;
+                              } on ApiException catch (e) {
+                                return e.message;
+                              }
+                            },
+                          );
+                          if (!confirmed || !context.mounted) return;
+                          clearSession();
+                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          _snack(context, S.profileAccountDeactivatedSnack);
+                        },
                       ),
                       const AccountRowDivider(),
                       AccountInfoRow(
                         icon: Icons.delete_outline,
                         iconColor: NexbitColors.down,
                         label: S.profileDeleteAccount,
-                        onTap: () => _confirm(
-                          context,
-                          title: S.profileDeleteConfirmTitle,
-                          message: S.profileDeleteConfirmMessage,
-                          danger: true,
-                          onConfirm: () {
-                            clearSession();
-                            Navigator.of(context).popUntil((route) => route.isFirst);
-                            _snack(context, S.profileAccountDeletedSnack);
-                          },
-                        ),
+                        onTap: () async {
+                          final confirmed = await _confirm(
+                            context,
+                            title: S.profileDeleteConfirmTitle,
+                            message: S.profileDeleteConfirmMessage,
+                            danger: true,
+                            onConfirm: () async {
+                              try {
+                                await ApiClient.deleteAccount(authToken.value);
+                                return null;
+                              } on ApiException catch (e) {
+                                return e.message;
+                              }
+                            },
+                          );
+                          if (!confirmed || !context.mounted) return;
+                          clearSession();
+                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          _snack(context, S.profileAccountDeletedSnack);
+                        },
                       ),
                     ],
                   ),
@@ -258,29 +281,86 @@ class _NexbitProfilePageState extends State<NexbitProfilePage> {
     );
   }
 
-  void _confirm(BuildContext context, {required String title, required String message, required VoidCallback onConfirm, bool danger = false}) {
-    showDialog<void>(
+  /// [onConfirm] returns null on success (closes the dialog) or an
+  /// error message to show inline (dialog stays open) — same pattern
+  /// as showDepositWithdrawDialog/showExchangeDialog, so a real backend
+  /// call (deactivate/delete — see their call sites) that fails doesn't
+  /// silently claim success the way this dialog used to (it fired
+  /// onConfirm unconditionally, with no backend call behind it at all).
+  ///
+  /// Returns whether it was actually confirmed (and succeeded) — the
+  /// caller does any further navigation (popping back to root, showing
+  /// a snackbar) only after this dialog has fully closed. Doing that
+  /// navigation from inside onConfirm itself, before this dialog's own
+  /// route was popped, raced the two pops against each other (both
+  /// operate on the same underlying Navigator) and left the app on a
+  /// blank screen — a real bug caught while testing this exact flow.
+  Future<bool> _confirm(
+    BuildContext context, {
+    required String title,
+    required String message,
+    required Future<String?> Function() onConfirm,
+    bool danger = false,
+  }) async {
+    bool loading = false;
+    String? error;
+
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: NexbitColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: NexbitColors.line)),
-        title: Text(title, style: NexbitText.body(fontSize: 16, weight: FontWeight.w700, color: NexbitColors.text)),
-        content: Text(message, style: NexbitText.body(fontSize: 13.5, height: 1.4)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(S.accountCancel, style: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted)),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          backgroundColor: NexbitColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: NexbitColors.line)),
+          title: Text(title, style: NexbitText.body(fontSize: 16, weight: FontWeight.w700, color: NexbitColors.text)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message, style: NexbitText.body(fontSize: 13.5, height: 1.4)),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Text(error!, style: NexbitText.body(fontSize: 12.5, color: NexbitColors.down)),
+              ],
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              onConfirm();
-            },
-            child: Text(S.accountConfirm, style: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700, color: danger ? NexbitColors.down : NexbitColors.accent)),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: loading ? null : () => Navigator.of(dialogContext).pop(false),
+              child: Text(S.accountCancel, style: NexbitText.body(fontSize: 13.5, color: NexbitColors.muted)),
+            ),
+            TextButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      setDialogState(() {
+                        loading = true;
+                        error = null;
+                      });
+                      final failureMessage = await onConfirm();
+                      if (!dialogContext.mounted) return;
+                      if (failureMessage == null) {
+                        Navigator.of(dialogContext).pop(true);
+                      } else {
+                        setDialogState(() {
+                          loading = false;
+                          error = failureMessage;
+                        });
+                      }
+                    },
+              child: loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: NexbitColors.accent),
+                    )
+                  : Text(S.accountConfirm,
+                      style: NexbitText.body(fontSize: 13.5, weight: FontWeight.w700, color: danger ? NexbitColors.down : NexbitColors.accent)),
+            ),
+          ],
+        ),
       ),
     );
+    return confirmed ?? false;
   }
 }
 
