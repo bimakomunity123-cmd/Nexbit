@@ -21,6 +21,7 @@ class UserOut(BaseModel):
     name: str
     email: EmailStr
     is_active: bool
+    two_factor_enabled: bool
     created_at: datetime
 
     class Config:
@@ -31,6 +32,21 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class TwoFactorChallengeOut(BaseModel):
+    two_factor_required: Literal[True] = True
+    challenge_token: str
+    # Demo-only shortcut — see TwoFactorChallenge's docstring in
+    # models.py. A real product must deliver this over a verified
+    # out-of-band channel (SMS/authenticator app), never in the login
+    # response itself.
+    otp_code: str
+
+
+class VerifyTwoFactorRequest(BaseModel):
+    challenge_token: str
+    code: str = Field(pattern=r"^\d{6}$")
 
 
 class AccountOut(BaseModel):

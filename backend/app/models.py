@@ -29,6 +29,11 @@ class User(Base):
     # demo has no session/token-revocation list, the same limitation
     # every other client-trusted-JWT endpoint here already carries.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Set by POST /auth/2fa/enable|disable (Keamanan's 2FA toggle —
+    # previously a purely local preference with zero effect on login).
+    # When true, login() issues a TwoFactorChallenge instead of a token
+    # directly — see that model's docstring below.
+    two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -267,3 +272,29 @@ class PasswordReset(Base):
     user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class TwoFactorChallenge(Base):
+    """A pending 2FA login challenge — created by login() when the
+    account has User.two_factor_enabled set (instead of issuing a token
+    directly), consumed by /auth/login/verify-2fa. IMPORTANT demo
+    compromise: this app has no SMS/authenticator-app/email infra, so
+    the OTP code is returned directly in the login response instead of
+    being sent out-of-band — same shortcut as PasswordReset's token
+    above, clearly labeled as a demo shortcut in the Flutter UI. A real
+    implementation must NEVER do this: the code must only ever reach
+    the user through a verified out-of-band channel.
+
+    `attempts` caps wrong-code guesses independently of the endpoint's
+    own IP rate limit — a real attacker could otherwise burn through
+    all 1,000,000 6-digit codes well within any reasonable per-IP
+    request budget.
+    """
+    __tablename__ = "two_factor_challenges"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id"), nullable=False)
+    code: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)

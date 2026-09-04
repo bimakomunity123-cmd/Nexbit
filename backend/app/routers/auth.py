@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
@@ -16,6 +17,7 @@ from ..models import (
     StakingAccount,
     StakingHolding,
     StakingPosition,
+    TwoFactorChallenge,
     User,
 )
 from ..rate_limit import limiter
@@ -26,8 +28,10 @@ from ..schemas import (
     RegisterRequest,
     ResetPasswordRequest,
     TokenResponse,
+    TwoFactorChallengeOut,
     UpdateProfileRequest,
     UserOut,
+    VerifyTwoFactorRequest,
 )
 from ..security import create_access_token, hash_password, verify_password
 
@@ -35,6 +39,8 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 _UNAUTHORIZED = ({"detail": "Missing or invalid bearer token"}, 401)
 _RESET_TOKEN_LIFETIME = timedelta(hours=1)
+_TWO_FACTOR_CHALLENGE_LIFETIME = timedelta(minutes=5)
+_TWO_FACTOR_MAX_ATTEMPTS = 5
 
 
 @auth_bp.post("/register")
@@ -85,8 +91,101 @@ def login():
             user.is_active = True
             db.commit()
 
+        if user.two_factor_enabled:
+            # Password alone isn't enough — hand back a challenge instead
+            # of a token. See verify_two_factor() for the second step and
+            # TwoFactorChallenge's docstring in models.py for the demo-
+            # only "code returned directly" shortcut.
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            challenge = TwoFactorChallenge(
+                user_id=user.id,
+                code=code,
+                expires_at=datetime.now(timezone.utc) + _TWO_FACTOR_CHALLENGE_LIFETIME,
+            )
+            db.add(challenge)
+            db.commit()
+            db.refresh(challenge)
+            return jsonify(TwoFactorChallengeOut(challenge_token=challenge.token, otp_code=code).model_dump(mode="json"))
+
         token = create_access_token(subject=user.id)
         return jsonify(TokenResponse(access_token=token, user=UserOut.model_validate(user)).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@auth_bp.post("/login/verify-2fa")
+# Same brute-force concern as reset-password's token guess — protects
+# the endpoint's overall request volume; TwoFactorChallenge.attempts
+# (see models.py) separately caps guesses against one specific
+# challenge, which is the tighter and more relevant limit here.
+@limiter.limit("20 per hour")
+def verify_two_factor():
+    """The second step of login for an account with two_factor_enabled
+    set — consumes the challenge login() created and, on a correct
+    code, issues the real access token.
+    """
+    body = VerifyTwoFactorRequest.model_validate(request.get_json(force=True, silent=False) or {})
+    db = SessionLocal()
+    try:
+        challenge = db.get(TwoFactorChallenge, body.challenge_token)
+        now = datetime.now(timezone.utc)
+        expires_at = challenge.expires_at.replace(tzinfo=timezone.utc) if challenge else None
+        if challenge is None or challenge.used or expires_at is None or expires_at < now:
+            return jsonify({"detail": "Kode verifikasi tidak valid atau sudah kedaluwarsa"}), 400
+        if challenge.attempts >= _TWO_FACTOR_MAX_ATTEMPTS:
+            return jsonify({"detail": "Terlalu banyak percobaan salah, silakan masuk ulang"}), 400
+
+        if body.code != challenge.code:
+            challenge.attempts += 1
+            db.commit()
+            return jsonify({"detail": "Kode verifikasi salah"}), 401
+
+        user = db.get(User, challenge.user_id)
+        if user is None:
+            return jsonify({"detail": "Akun tidak ditemukan"}), 404
+
+        challenge.used = True
+        db.commit()
+
+        token = create_access_token(subject=user.id)
+        return jsonify(TokenResponse(access_token=token, user=UserOut.model_validate(user)).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@auth_bp.post("/2fa/enable")
+@limiter.limit("10 per hour")
+def enable_two_factor():
+    """Turns on 2FA for the current account — previously this toggle
+    (Keamanan's "2FA") was purely local Flutter state (AppPrefs) with
+    zero effect on login. See login()'s docstring for what changes once
+    this is on.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+        user.two_factor_enabled = True
+        db.commit()
+        db.refresh(user)
+        return jsonify(UserOut.model_validate(user).model_dump(mode="json"))
+    finally:
+        db.close()
+
+
+@auth_bp.post("/2fa/disable")
+@limiter.limit("10 per hour")
+def disable_two_factor():
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(_UNAUTHORIZED[0]), _UNAUTHORIZED[1]
+        user.two_factor_enabled = False
+        db.commit()
+        db.refresh(user)
+        return jsonify(UserOut.model_validate(user).model_dump(mode="json"))
     finally:
         db.close()
 
@@ -250,6 +349,7 @@ def delete_account():
             StakingAccount,
             KycVerification,
             PasswordReset,
+            TwoFactorChallenge,
         ):
             db.query(model).filter(model.user_id == user.id).delete(synchronize_session=False)
         db.delete(user)

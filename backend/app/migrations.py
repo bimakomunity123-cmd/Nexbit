@@ -28,6 +28,7 @@ _COLUMN_ADDITIONS = {
     },
     "users": {
         "is_active": "BOOLEAN DEFAULT 1",
+        "two_factor_enabled": "BOOLEAN DEFAULT 0",
     },
 }
 

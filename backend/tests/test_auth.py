@@ -4,7 +4,7 @@ forgot/reset-password.
 from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
-from app.models import Account, KycVerification, PasswordReset, Position, SpotWallet, User
+from app.models import Account, KycVerification, PasswordReset, Position, SpotWallet, TwoFactorChallenge, User
 from app.security import hash_password
 
 from .helpers import auth_headers, register, register_and_login
@@ -305,6 +305,143 @@ class TestDeleteAccount:
         client.delete("/auth/account", headers=auth_headers(token))
 
         resp = client.delete("/auth/account", headers=auth_headers(token))
+        assert resp.status_code == 401
+
+
+class TestTwoFactor:
+    def test_login_without_2fa_returns_token_directly(self, client):
+        email, password = "no2fa@example.com", "password123"
+        register(client, email=email, password=password)
+        resp = client.post("/auth/login", json={"email": email, "password": password})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert "access_token" in body
+        assert "two_factor_required" not in body
+
+    def test_enable_sets_flag_on_user(self, client):
+        token, _ = register_and_login(client, email="enable2fa@example.com")
+        resp = client.post("/auth/2fa/enable", headers=auth_headers(token))
+        assert resp.status_code == 200
+        assert resp.get_json()["two_factor_enabled"] is True
+
+    def test_login_with_2fa_enabled_returns_challenge_not_token(self, client):
+        email, password = "challenge@example.com", "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/2fa/enable", headers=auth_headers(token))
+
+        resp = client.post("/auth/login", json={"email": email, "password": password})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["two_factor_required"] is True
+        assert "challenge_token" in body
+        assert "otp_code" in body
+        assert "access_token" not in body
+
+    def test_verify_with_correct_code_issues_a_working_token(self, client):
+        email, password = "verifyok@example.com", "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/2fa/enable", headers=auth_headers(token))
+
+        login = client.post("/auth/login", json={"email": email, "password": password}).get_json()
+        resp = client.post(
+            "/auth/login/verify-2fa",
+            json={"challenge_token": login["challenge_token"], "code": login["otp_code"]},
+        )
+        assert resp.status_code == 200
+        real_token = resp.get_json()["access_token"]
+
+        me = client.get("/auth/me", headers=auth_headers(real_token))
+        assert me.status_code == 200
+        assert me.get_json()["email"] == email
+
+    def test_verify_with_wrong_code_rejected(self, client):
+        email, password = "verifywrong@example.com", "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/2fa/enable", headers=auth_headers(token))
+
+        login = client.post("/auth/login", json={"email": email, "password": password}).get_json()
+        wrong_code = "000000" if login["otp_code"] != "000000" else "111111"
+        resp = client.post(
+            "/auth/login/verify-2fa",
+            json={"challenge_token": login["challenge_token"], "code": wrong_code},
+        )
+        assert resp.status_code == 401
+
+    def test_challenge_locks_out_after_max_wrong_attempts(self, client):
+        email, password = "verifylockout@example.com", "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/2fa/enable", headers=auth_headers(token))
+
+        login = client.post("/auth/login", json={"email": email, "password": password}).get_json()
+        wrong_code = "000000" if login["otp_code"] != "000000" else "111111"
+        for _ in range(5):
+            client.post(
+                "/auth/login/verify-2fa",
+                json={"challenge_token": login["challenge_token"], "code": wrong_code},
+            )
+
+        # Even the correct code is now rejected — the challenge is spent.
+        resp = client.post(
+            "/auth/login/verify-2fa",
+            json={"challenge_token": login["challenge_token"], "code": login["otp_code"]},
+        )
+        assert resp.status_code == 400
+
+    def test_verify_with_already_used_challenge_rejected(self, client):
+        email, password = "verifyreuse@example.com", "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/2fa/enable", headers=auth_headers(token))
+
+        login = client.post("/auth/login", json={"email": email, "password": password}).get_json()
+        body = {"challenge_token": login["challenge_token"], "code": login["otp_code"]}
+        first = client.post("/auth/login/verify-2fa", json=body)
+        assert first.status_code == 200
+
+        second = client.post("/auth/login/verify-2fa", json=body)
+        assert second.status_code == 400
+
+    def test_verify_with_expired_challenge_rejected(self, client):
+        _, user = register_and_login(client, email="verifyexpired@example.com")
+        db = SessionLocal()
+        try:
+            expired = TwoFactorChallenge(
+                user_id=user["id"],
+                code="123456",
+                expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            )
+            db.add(expired)
+            db.commit()
+            db.refresh(expired)
+            challenge_token = expired.token
+        finally:
+            db.close()
+
+        resp = client.post(
+            "/auth/login/verify-2fa", json={"challenge_token": challenge_token, "code": "123456"}
+        )
+        assert resp.status_code == 400
+
+    def test_verify_with_nonexistent_challenge_rejected(self, client):
+        resp = client.post(
+            "/auth/login/verify-2fa", json={"challenge_token": "not-a-real-token", "code": "123456"}
+        )
+        assert resp.status_code == 400
+
+    def test_disable_turns_off_the_challenge_requirement(self, client):
+        email, password = "disable2fa@example.com", "password123"
+        token, _ = register_and_login(client, email=email, password=password)
+        client.post("/auth/2fa/enable", headers=auth_headers(token))
+        client.post("/auth/2fa/disable", headers=auth_headers(token))
+
+        resp = client.post("/auth/login", json={"email": email, "password": password})
+        assert "access_token" in resp.get_json()
+
+    def test_enable_without_token_rejected(self, client):
+        resp = client.post("/auth/2fa/enable")
+        assert resp.status_code == 401
+
+    def test_disable_without_token_rejected(self, client):
+        resp = client.post("/auth/2fa/disable")
         assert resp.status_code == 401
 
 
